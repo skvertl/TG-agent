@@ -37,7 +37,7 @@
   - Тест: `tests/unit/test_telegram_handlers.py` (обработка `/start`, `/help`, текстовых сообщений, трансляция доменных ошибок `LLMTimeoutError`/`LLMConnectionError` в понятный UX).
   - Реализация: `adapters/telegram/handlers.py` и сборка диспетчера в `adapters/telegram/bot.py`.
 
-- [ ] **Task 9: Application Config & Graceful Entrypoint**
+- [x] **Task 9: Application Config & Graceful Entrypoint**
   - Реализация: `config.py` (Pydantic Settings: `TELEGRAM_BOT_TOKEN`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`, `SYSTEM_PROMPT`).
   - Реализация: `main.py` (сборка контейнера зависимостей, запуск бота с lifespan, перехват `SIGINT`/`SIGTERM` для graceful shutdown).
 
