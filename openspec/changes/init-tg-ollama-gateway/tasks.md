@@ -19,7 +19,7 @@
   - Тест: `tests/unit/test_stateless_memory.py` (проверка возврата пустого контекста, изоляции запросов, no-op сохранения).
   - Реализация: `adapters/memory/stateless.py` (`StatelessMemoryStore`).
 
-- [ ] **Task 5: Core Domain Orchestrator (`AgentRunner`)**
+- [x] **Task 5: Core Domain Orchestrator (`AgentRunner`)**
   - Тест: `tests/unit/test_runner.py` (тестирование пайплайна с mock-плагином: инъекция системного промпта, вызов генерации, изоляция слоев).
   - Реализация: `core/runner.py` (`AgentRunner`).
 
