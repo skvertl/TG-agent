@@ -27,7 +27,7 @@
   - Тест: `tests/unit/test_ollama_plugin.py` (mock httpx: успешный ответ `/api/chat`, парсинг токенов, стриминг, обработка `httpx.TimeoutException` -> `LLMTimeoutError`, `httpx.ConnectError` -> `LLMConnectionError`, статус 500 -> `LLMResponseError`).
   - Реализация: `adapters/llm/ollama_plugin.py` (`OllamaPlugin`).
 
-- [ ] **Task 7: Driving Adapter Utilities (Splitter & Typing Indicator)**
+- [x] **Task 7: Driving Adapter Utilities (Splitter & Typing Indicator)**
   - Тест: `tests/unit/test_splitter.py` (разбиение строк > 4000 символов по `\n\n`, `\n`, пробелам; сохранение Markdown-блоков кода ` ``` `).
   - Реализация: `adapters/telegram/splitter.py`.
   - Тест: `tests/unit/test_typing.py` (проверка интервалов `ChatAction.TYPING` и гарантированной отмены фоновой задачи в `finally`).
