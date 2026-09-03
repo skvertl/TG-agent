@@ -41,7 +41,7 @@
   - Реализация: `config.py` (Pydantic Settings: `TELEGRAM_BOT_TOKEN`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_TIMEOUT`, `SYSTEM_PROMPT`).
   - Реализация: `main.py` (сборка контейнера зависимостей, запуск бота с lifespan, перехват `SIGINT`/`SIGTERM` для graceful shutdown).
 
-- [ ] **Task 10: Infrastructure & Docker Topology**
+- [x] **Task 10: Infrastructure & Docker Topology**
   - Реализация: `Dockerfile` (multi-stage: builder + runner с непривилегированным пользователем `appuser:appuser`).
   - Реализация: `.dockerignore`.
   - Реализация: `docker-compose.yml` (сервис `ollama` с healthcheck и резервацией GPU, сервис `bot` с `depends_on: ollama: condition: service_healthy`, bridge-сеть `ai-network`, том `ollama_data`).
