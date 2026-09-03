@@ -24,12 +24,20 @@ def _resolve_secrets_dir() -> Optional[Path]:
     return None
 
 
-def _read_file_content(file_path: Optional[str]) -> Optional[str]:
-    """Безопасно читает содержимое файла секрета."""
-    if file_path and os.path.isfile(file_path):
+def _read_file_content(file_path: Optional[Union[str, Path]]) -> Optional[str]:
+    """Безопасно читает содержимое файла секрета, игнорируя комментарии и пустые строки."""
+    if not file_path:
+        return None
+    p = Path(file_path)
+    if p.is_file():
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
+            with open(p, "r", encoding="utf-8") as f:
+                lines = [
+                    line.strip()
+                    for line in f
+                    if line.strip() and not line.strip().startswith("#")
+                ]
+                return "\n".join(lines) if lines else None
         except OSError:
             return None
     return None
@@ -80,11 +88,29 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_and_post_process(self) -> "Settings":
-        # 1. Чтение токена из TELEGRAM_BOT_TOKEN_FILE, если не задан из secrets_dir/env
+        # 1. Чтение токена из TELEGRAM_BOT_TOKEN_FILE или fallback на secrets/telegram_bot_token[.txt]
         if not self.telegram_bot_token and self.telegram_bot_token_file:
             val = _read_file_content(self.telegram_bot_token_file)
             if val:
                 self.telegram_bot_token = val
+
+        if not self.telegram_bot_token:
+            s_dir = _resolve_secrets_dir()
+            if s_dir:
+                for candidate in [s_dir / "telegram_bot_token", s_dir / "telegram_bot_token.txt"]:
+                    val = _read_file_content(candidate)
+                    if val:
+                        self.telegram_bot_token = val
+                        break
+
+        # Очистка токена от возможных случайных комментариев или пробелов
+        if self.telegram_bot_token:
+            lines = [
+                line.strip()
+                for line in self.telegram_bot_token.splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            ]
+            self.telegram_bot_token = lines[0] if lines else None
 
         if not self.telegram_bot_token:
             raise ValueError(
@@ -106,7 +132,7 @@ class Settings(BaseSettings):
         elif isinstance(val, (list, tuple, set)):
             parsed = [int(x) for x in val]
 
-        # 3. Чтение ID из ALLOWED_USER_ID_FILE
+        # 3. Чтение ID из ALLOWED_USER_ID_FILE или fallback на secrets_dir
         if self.allowed_user_id_file:
             file_id = _read_file_content(self.allowed_user_id_file)
             if file_id:
@@ -115,6 +141,20 @@ class Settings(BaseSettings):
                         uid = int(chunk.strip())
                         if uid not in parsed:
                             parsed.append(uid)
+
+        if not parsed:
+            s_dir = _resolve_secrets_dir()
+            if s_dir:
+                for candidate in [s_dir / "allowed_user_ids", s_dir / "allowed_user_ids.txt"]:
+                    val = _read_file_content(candidate)
+                    if val:
+                        for chunk in val.replace("\n", ",").split(","):
+                            if chunk.strip().isdigit():
+                                uid = int(chunk.strip())
+                                if uid not in parsed:
+                                    parsed.append(uid)
+                        if parsed:
+                            break
 
         # 4. Проверка одиночного ALLOWED_USER_ID
         if self.allowed_user_id is not None and self.allowed_user_id not in parsed:

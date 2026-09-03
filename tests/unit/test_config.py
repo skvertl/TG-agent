@@ -2,6 +2,13 @@ import pytest
 from pydantic import ValidationError
 from config import Settings
 
+@pytest.fixture(autouse=True)
+def isolate_secrets_env(monkeypatch, tmp_path):
+    empty_dir = tmp_path / "empty_secrets"
+    empty_dir.mkdir()
+    monkeypatch.setenv("SECRETS_DIR", str(empty_dir))
+
+
 class TestConfig:
     def test_settings_load_from_env_vars(self, monkeypatch):
         monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
