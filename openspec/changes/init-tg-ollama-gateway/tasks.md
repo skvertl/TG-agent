@@ -10,12 +10,12 @@
   - Реализация: `core/models.py`.
   - Реализация: `core/exceptions.py` (`DomainError`, `LLMPluginError`, `LLMTimeoutError`, `LLMConnectionError`, `LLMResponseError`).
 
-- [ ] **Task 3: Core Ports & Abstract Interfaces**
+- [x] **Task 3: Core Ports & Abstract Interfaces**
   - Реализация: `core/ports/llm_plugin.py` (`BaseLLMPlugin` с методами `initialize`, `generate`, `generate_stream`, `shutdown`).
   - Реализация: `core/ports/memory_store.py` (`BaseMemoryStore` с методами `get_history`, `save_message`, `clear`).
   - Тест: `tests/unit/test_ports.py` (проверка контрактов и невозможности инстанцирования без имплементации).
 
-- [ ] **Task 4: Stateless Memory Store**
+- [x] **Task 4: Stateless Memory Store**
   - Тест: `tests/unit/test_stateless_memory.py` (проверка возврата пустого контекста, изоляции запросов, no-op сохранения).
   - Реализация: `adapters/memory/stateless.py` (`StatelessMemoryStore`).
 
