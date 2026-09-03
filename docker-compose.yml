@@ -11,6 +11,7 @@ services:
       - OLLAMA_MODEL=qwen2.5:7b
       - OLLAMA_TIMEOUT=60.0
       - SECRETS_DIR=/run/secrets
+      - SYSTEM_PROMPT=Ты умный, полезный и вежливый ИИ-ассистент. Всегда отвечай строго на грамотном русском языке (или на языке вопроса пользователя). Никогда не используй китайские иероглифы.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     secrets:
