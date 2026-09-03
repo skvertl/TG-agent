@@ -36,7 +36,14 @@ async def main() -> None:
 
     # 3. Driving Telegram Adapter
     bot = create_bot(token=settings.telegram_bot_token)
-    dp = create_dispatcher(runner=runner)
+    dp = create_dispatcher(
+        runner=runner,
+        allowed_user_ids=settings.allowed_user_ids,
+    )
+    if settings.allowed_user_ids:
+        logger.info("Access whitelist active: %s", settings.allowed_user_ids)
+    else:
+        logger.info("No whitelist configured: bot responds to all users.")
 
     try:
         logger.info(

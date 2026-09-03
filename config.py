@@ -1,3 +1,4 @@
+from typing import List, Union, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -19,3 +20,24 @@ class Settings(BaseSettings):
         default="You are a helpful and concise AI assistant.",
         alias="SYSTEM_PROMPT"
     )
+    allowed_user_ids: Union[str, List[int], int] = Field(default="", alias="ALLOWED_USER_IDS")
+    allowed_user_id: Optional[int] = Field(default=None, alias="ALLOWED_USER_ID")
+
+    def model_post_init(self, __context) -> None:
+        parsed: List[int] = []
+        val = self.allowed_user_ids
+
+        if isinstance(val, int):
+            parsed = [val]
+        elif isinstance(val, str) and val.strip():
+            cleaned = val.strip()
+            if cleaned.startswith("[") and cleaned.endswith("]"):
+                cleaned = cleaned[1:-1]
+            parsed = [int(x.strip()) for x in cleaned.split(",") if x.strip().isdigit()]
+        elif isinstance(val, (list, tuple, set)):
+            parsed = [int(x) for x in val]
+
+        if self.allowed_user_id is not None and self.allowed_user_id not in parsed:
+            parsed.append(self.allowed_user_id)
+
+        object.__setattr__(self, "allowed_user_ids", parsed)

@@ -38,6 +38,17 @@ services:
         condition: service_healthy
     networks:
       - ai-network
+    # Sandbox security hardening
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+          pids: 100
 
 networks:
   ai-network:

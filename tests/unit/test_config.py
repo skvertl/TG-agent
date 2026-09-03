@@ -35,3 +35,22 @@ class TestConfig:
         monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
         with pytest.raises(ValidationError):
             Settings()
+
+    def test_allowed_user_ids_parsing(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+        monkeypatch.setenv("ALLOWED_USER_IDS", "111, 222, 333")
+        settings = Settings()
+        assert settings.allowed_user_ids == [111, 222, 333]
+
+    def test_allowed_single_user_id(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+        monkeypatch.setenv("ALLOWED_USER_ID", "999888")
+        settings = Settings()
+        assert 999888 in settings.allowed_user_ids
+
+    def test_allowed_user_ids_default_empty(self, monkeypatch):
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+        monkeypatch.delenv("ALLOWED_USER_IDS", raising=False)
+        monkeypatch.delenv("ALLOWED_USER_ID", raising=False)
+        settings = Settings()
+        assert settings.allowed_user_ids == []
