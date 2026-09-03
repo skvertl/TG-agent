@@ -23,7 +23,7 @@
   - Тест: `tests/unit/test_runner.py` (тестирование пайплайна с mock-плагином: инъекция системного промпта, вызов генерации, изоляция слоев).
   - Реализация: `core/runner.py` (`AgentRunner`).
 
-- [ ] **Task 6: Driven Adapter — OllamaPlugin**
+- [x] **Task 6: Driven Adapter — OllamaPlugin**
   - Тест: `tests/unit/test_ollama_plugin.py` (mock httpx: успешный ответ `/api/chat`, парсинг токенов, стриминг, обработка `httpx.TimeoutException` -> `LLMTimeoutError`, `httpx.ConnectError` -> `LLMConnectionError`, статус 500 -> `LLMResponseError`).
   - Реализация: `adapters/llm/ollama_plugin.py` (`OllamaPlugin`).
 
