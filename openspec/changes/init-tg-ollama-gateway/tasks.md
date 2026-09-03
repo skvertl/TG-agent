@@ -47,6 +47,6 @@
   - Реализация: `docker-compose.yml` (сервис `ollama` с healthcheck и резервацией GPU, сервис `bot` с `depends_on: ollama: condition: service_healthy`, bridge-сеть `ai-network`, том `ollama_data`).
   - Реализация: `.env.example`.
 
-- [ ] **Task 11: End-to-End Verification & Test Suite Execution**
+- [x] **Task 11: End-to-End Verification & Test Suite Execution**
   - Запуск полного набора unit и integration тестов через `pytest`.
   - Проверка соответствия спецификации `bot_core_spec.md`.
