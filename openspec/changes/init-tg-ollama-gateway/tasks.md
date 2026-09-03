@@ -5,7 +5,7 @@
   - Оформить `pyproject.toml` (или `requirements.txt`) с зависимостями: `aiogram>=3.4`, `httpx>=0.27`, `pydantic>=2.6`, `pydantic-settings>=2.2`, `pytest>=8.0`, `pytest-asyncio>=0.23`, `pytest-mock>=3.12`.
   - Настроить конфигурацию `pytest` (asyncio_mode = auto).
 
-- [ ] **Task 2: Core DTOs & Domain Exceptions**
+- [x] **Task 2: Core DTOs & Domain Exceptions**
   - Тест: `tests/unit/test_models.py` (валидация `ChatMessage`, `PromptPayload`, `AgentResult`).
   - Реализация: `core/models.py`.
   - Реализация: `core/exceptions.py` (`DomainError`, `LLMPluginError`, `LLMTimeoutError`, `LLMConnectionError`, `LLMResponseError`).
