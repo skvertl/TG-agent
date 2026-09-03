@@ -33,21 +33,30 @@
 
 3. **Driving-адаптер (`adapters/telegram/`)**:
    - `TelegramBotAdapter` на базе `aiogram 3.x`.
+   - `AuthMiddleware` (`middlewares.py`): приватный белый список доступа по `ALLOWED_USER_ID` / `ALLOWED_USER_IDS` (неавторизованные пользователи блокируются).
    - Безопасный сплиттер (`splitter.py`) длинных сообщений (> 4000 символов) с сохранением блоков кода Markdown (` ``` `).
    - Менеджер периодического статуса «печатает...» (`keep_typing`) с гарантированной отменой фоновой корутины.
 
 ---
 
-## 🚀 Быстрый старт через Docker Compose
+## 🚀 Быстрый старт через Docker Sandbox
+
+Контейнер бота полностью изолирован (Sandbox):
+- Запуск от непривилегированного пользователя `appuser` (UID 10001).
+- Сброшены все Linux capabilities (`cap_drop: [ALL]`).
+- Запрет эскалации привилегий (`no-new-privileges:true`).
+- Лимиты ресурсов: 1.0 CPU, 512MB RAM, 100 процессов (`pids: 100`).
+- Изолированная внутренняя bridge-сеть `ai-network`.
 
 ### 1. Подготовка переменных окружения
 Скопируйте пример файла конфигурации:
 ```bash
 cp .env.example .env
 ```
-Укажите ваш токен Telegram-бота:
+Укажите ваш токен Telegram-бота и ваш Telegram ID:
 ```env
 TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+ALLOWED_USER_ID=123456789
 OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_MODEL=qwen2.5:1.5b
 OLLAMA_TIMEOUT=60.0
