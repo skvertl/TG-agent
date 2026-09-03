@@ -14,3 +14,7 @@ ENV/
 .env
 .env.local
 *.log
+
+# Docker Secrets (Never commit secrets!)
+secrets/*.txt
+!secrets/*.example

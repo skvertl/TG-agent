@@ -54,3 +54,31 @@ class TestConfig:
         monkeypatch.delenv("ALLOWED_USER_ID", raising=False)
         settings = Settings()
         assert settings.allowed_user_ids == []
+
+    def test_load_from_docker_secrets_dir(self, tmp_path, monkeypatch):
+        token_file = tmp_path / "telegram_bot_token"
+        token_file.write_text("docker_secret_token_abc")
+        user_ids_file = tmp_path / "allowed_user_ids"
+        user_ids_file.write_text("777, 888")
+
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.setenv("SECRETS_DIR", str(tmp_path))
+
+        settings = Settings()
+        assert settings.telegram_bot_token == "docker_secret_token_abc"
+        assert settings.allowed_user_ids == [777, 888]
+
+    def test_load_from_file_path_env_vars(self, tmp_path, monkeypatch):
+        token_file = tmp_path / "my_token.txt"
+        token_file.write_text("token_from_file_path")
+        id_file = tmp_path / "my_id.txt"
+        id_file.write_text("555444")
+
+        monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN_FILE", str(token_file))
+        monkeypatch.setenv("ALLOWED_USER_ID_FILE", str(id_file))
+
+        settings = Settings()
+        assert settings.telegram_bot_token == "token_from_file_path"
+        assert 555444 in settings.allowed_user_ids
+

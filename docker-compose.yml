@@ -29,10 +29,14 @@ services:
       dockerfile: Dockerfile
     container_name: tg-bot-gateway
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=qwen2.5:1.5b
+      - OLLAMA_TIMEOUT=60.0
+      - SECRETS_DIR=/run/secrets
+    secrets:
+      - telegram_bot_token
+      - allowed_user_ids
     depends_on:
       ollama:
         condition: service_healthy
@@ -49,6 +53,12 @@ services:
           cpus: '1.0'
           memory: 512M
           pids: 100
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token.txt
+  allowed_user_ids:
+    file: ./secrets/allowed_user_ids.txt
 
 networks:
   ai-network:

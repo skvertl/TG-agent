@@ -37,31 +37,22 @@
    - Безопасный сплиттер (`splitter.py`) длинных сообщений (> 4000 символов) с сохранением блоков кода Markdown (` ``` `).
    - Менеджер периодического статуса «печатает...» (`keep_typing`) с гарантированной отменой фоновой корутины.
 
----
+## 🔐 Безопасность и Docker Secrets (Zero-Knowledge)
 
-## 🚀 Быстрый старт через Docker Sandbox
+Все секреты передаются **исключительно через Docker Secrets** в виртуальную память (`tmpfs`) по пути `/run/secrets/`.
+- ❌ **Секреты НЕ передаются через переменные окружения** (их невозможно увидеть через `docker inspect` или `/proc/1/environ`).
+- ❌ **Секреты НЕ попадут в git** (`secrets/*.txt` добавлены в `.gitignore`).
 
-Контейнер бота полностью изолирован (Sandbox):
-- Запуск от непривилегированного пользователя `appuser` (UID 10001).
-- Сброшены все Linux capabilities (`cap_drop: [ALL]`).
-- Запрет эскалации привилегий (`no-new-privileges:true`).
-- Лимиты ресурсов: 1.0 CPU, 512MB RAM, 100 процессов (`pids: 100`).
-- Изолированная внутренняя bridge-сеть `ai-network`.
-
-### 1. Подготовка переменных окружения
-Скопируйте пример файла конфигурации:
+### 1. Подготовка секретов
+Создайте файлы секретов из примеров:
 ```bash
-cp .env.example .env
+cp secrets/telegram_bot_token.txt.example secrets/telegram_bot_token.txt
+cp secrets/allowed_user_ids.txt.example secrets/allowed_user_ids.txt
 ```
-Укажите ваш токен Telegram-бота и ваш Telegram ID:
-```env
-TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
-ALLOWED_USER_ID=123456789
-OLLAMA_BASE_URL=http://ollama:11434
-OLLAMA_MODEL=qwen2.5:1.5b
-OLLAMA_TIMEOUT=60.0
-SYSTEM_PROMPT=You are a helpful and concise AI assistant running locally via Ollama.
-```
+1. В `secrets/telegram_bot_token.txt` вставьте токен вашего бота (от `@BotFather`).
+2. В `secrets/allowed_user_ids.txt` укажите ваш Telegram User ID.
+
+*(Для локальной разработки без Docker также поддерживается стандартный `.env` файл из `.env.example`).*
 
 ### 2. Запуск контейнеров
 ```bash
