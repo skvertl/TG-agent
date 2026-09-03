@@ -33,7 +33,7 @@
   - Тест: `tests/unit/test_typing.py` (проверка интервалов `ChatAction.TYPING` и гарантированной отмены фоновой задачи в `finally`).
   - Реализация: `adapters/telegram/typing.py`.
 
-- [ ] **Task 8: Driving Adapter — Telegram Bot & Handlers**
+- [x] **Task 8: Driving Adapter — Telegram Bot & Handlers**
   - Тест: `tests/unit/test_telegram_handlers.py` (обработка `/start`, `/help`, текстовых сообщений, трансляция доменных ошибок `LLMTimeoutError`/`LLMConnectionError` в понятный UX).
   - Реализация: `adapters/telegram/handlers.py` и сборка диспетчера в `adapters/telegram/bot.py`.
 
