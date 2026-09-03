@@ -1,48 +1,22 @@
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: tg-ollama-service
-    restart: unless-stopped
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - ai-network
-    ports:
-      - "11434:11434"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 15s
-
   bot:
     build:
       context: .
       dockerfile: Dockerfile
+    image: tg-agent-bot:latest
     container_name: tg-bot-gateway
     restart: unless-stopped
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=qwen2.5:1.5b
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_MODEL=qwen2.5:7b
       - OLLAMA_TIMEOUT=60.0
       - SECRETS_DIR=/run/secrets
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     secrets:
       - telegram_bot_token
       - allowed_user_ids
-    depends_on:
-      ollama:
-        condition: service_healthy
-    networks:
-      - ai-network
-    # Sandbox security hardening
+    # Docker Sandbox Security Hardening
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -59,12 +33,3 @@ secrets:
     file: ./secrets/telegram_bot_token.txt
   allowed_user_ids:
     file: ./secrets/allowed_user_ids.txt
-
-networks:
-  ai-network:
-    name: ai-network
-    driver: bridge
-
-volumes:
-  ollama_data:
-    name: ollama_data
