@@ -282,6 +282,21 @@ class TelemetryStorage:
                         (r["total_tokens"] / all_tool_tokens) * 100.0, 1
                     )
 
+            # Распределение по моделям
+            model_cursor = conn.execute(
+                f"""
+                SELECT model, COUNT(*) as count
+                FROM run_summaries
+                {where_clause}
+                GROUP BY model
+                ORDER BY count DESC
+                """,
+                params,
+            )
+            model_rows = model_cursor.fetchall()
+            models_usage = {r["model"]: r["count"] for r in model_rows}
+            active_model = model_rows[0]["model"] if model_rows else None
+
             return GlobalStats(
                 total_tasks=total_tasks,
                 total_input_tokens=total_input,
@@ -294,6 +309,8 @@ class TelemetryStorage:
                 cache_hit_rate=cache_hit_rate,
                 repeated_tokens_pct=repeated_pct,
                 tool_usage_pct=tool_usage_pct,
+                active_model=active_model,
+                models_usage=models_usage,
             )
 
     def get_run_timeline(self, task_id: str) -> Optional[RunTimeline]:

@@ -68,3 +68,19 @@ def calculate_cost(
     output_cost = (output_tokens / 1_000_000.0) * rates["output_per_1m"]
 
     return round(input_cost + cached_cost + output_cost, 6)
+
+
+def get_pricing_explanation(model: str) -> str:
+    """Возвращает текстовое объяснение тарифов и формулы расчета стоимости."""
+    rates = get_model_rates(model)
+    in_rate = rates["input_per_1m"]
+    out_rate = rates["output_per_1m"]
+    cache_rate = rates.get("cached_per_1m", in_rate * 0.25)
+
+    return (
+        f"• Модель: `{model}`\n"
+        f"• Тарифы (за 1M токенов): Вход: `${in_rate:.2f}` | Выход: `${out_rate:.2f}` | Кэш: `${cache_rate:.3f}`\n"
+        f"• Формула: `Cost = (Input*${in_rate} + Output*${out_rate} + Cached*${cache_rate}) / 1,000,000`"
+    )
+
+

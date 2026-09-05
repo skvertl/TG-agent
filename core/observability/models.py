@@ -90,3 +90,6 @@ class GlobalStats(BaseModel):
     cache_hit_rate: float = 0.0
     repeated_tokens_pct: float = 0.0
     tool_usage_pct: Dict[str, float] = Field(default_factory=dict)
+    active_model: Optional[str] = None
+    models_usage: Dict[str, int] = Field(default_factory=dict)
+

@@ -74,6 +74,9 @@ class TestPresenter:
         assert "read_file" in report
         assert "task-184" in report
         assert "search" in report
+        assert "qwen2.5:7b" in report
+        assert "Формула" in report
+
 
     def test_format_timeline_markdown(self):
         summary = RunSummary(
