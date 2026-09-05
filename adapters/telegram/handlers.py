@@ -18,6 +18,7 @@ async def start_handler(message: Message) -> None:
     text = (
         "👋 **Привет!** Я Telegram-шлюз к локальной нейросети через **Ollama**.\n\n"
         "⚡ **Режим работы:** `Stateless` (одноразовый запрос без сохранения истории диалога).\n"
+        "📊 **Мониторинг:** используйте команду /token_report для просмотра статистики токенов.\n"
         "💬 Просто отправьте мне любой вопрос или задачу, и я сгенерирую ответ!"
     )
     await message.answer(text, parse_mode="Markdown")
@@ -33,9 +34,45 @@ async def help_handler(message: Message) -> None:
         "• Допустимый таймаут генерации: 60 секунд.\n"
         "• Команды:\n"
         "  /start — перезапуск и приветствие\n"
-        "  /help — данная справка"
+        "  /help — данная справка\n"
+        "  /token_report — глобальная сводка по токенам, затратам и таймлайн последнего запуска\n"
+        "  /token_report <task_id> — детальный таймлайн конкретной задачи"
     )
     await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("token_report"))
+async def token_report_handler(message: Message, runner: AgentRunner) -> None:
+    """Обработчик команды /token_report: глобальная сводка, история и таймлайн."""
+    from core.observability.presenter import format_telegram_report, format_timeline_markdown
+    from core.observability.storage import TelemetryStorage
+
+    if getattr(runner, "observability_engine", None):
+        storage = runner.observability_engine.storage
+    else:
+        storage = TelemetryStorage()
+
+    args = message.text.split(maxsplit=1) if message.text else []
+    if len(args) > 1 and args[1].strip():
+        task_id = args[1].strip()
+        timeline = storage.get_run_timeline(task_id)
+        if not timeline:
+            await message.answer(f"❌ Задача с ID `{task_id}` не найдена в базе телеметрии.", parse_mode="Markdown")
+            return
+        report_text = format_timeline_markdown(timeline)
+        await message.answer(report_text, parse_mode="Markdown")
+        return
+
+    stats = storage.get_global_stats()
+    recent = storage.get_recent_runs(limit=5)
+    last_timeline = storage.get_run_timeline(recent[0].task_id) if recent else None
+
+    report_text = format_telegram_report(
+        stats=stats,
+        recent_runs=recent,
+        last_timeline=last_timeline,
+    )
+    await message.answer(report_text, parse_mode="Markdown")
 
 
 @router.message(F.text)

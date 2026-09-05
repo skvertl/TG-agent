@@ -103,3 +103,92 @@ class TestAgentRunner:
 
         # User message should not be saved or assistant message should not be saved if generation fails
         assert mock_memory.save_message.await_count == 0
+
+    @pytest.mark.asyncio
+    async def test_run_records_telemetry(self, mock_plugin, mock_memory, tmp_path):
+        from core.observability.engine import ObservabilityEngine
+        from core.observability.storage import TelemetryStorage
+
+        storage = TelemetryStorage(db_path=str(tmp_path / "runner_obs.db"))
+        engine = ObservabilityEngine(project_name="test-runner", storage=storage)
+
+        runner = AgentRunner(
+            llm_plugin=mock_plugin,
+            memory_store=mock_memory,
+            observability_engine=engine,
+        )
+
+        result = await runner.run(session_id="s-obs", user_prompt="Check telemetry")
+        assert result.task_id is not None
+
+        # Verify run summary in telemetry storage
+        recent = storage.get_recent_runs()
+        assert len(recent) == 1
+        assert recent[0].task_id == result.task_id
+        assert recent[0].total_input_tokens == 10
+        assert recent[0].total_output_tokens == 20
+
+    @pytest.mark.asyncio
+    async def test_run_with_react_tool_execution(self, mock_memory, tmp_path):
+        from core.observability.engine import ObservabilityEngine
+        from core.observability.storage import TelemetryStorage
+        from core.tools.registry import ToolRegistry
+        from core.tools.base import Tool
+
+        storage = TelemetryStorage(db_path=str(tmp_path / "runner_tools.db"))
+        engine = ObservabilityEngine(project_name="test-react", storage=storage)
+        registry = ToolRegistry(engine=engine, workspace_root=str(tmp_path))
+
+        # Register custom test tool
+        tool_called = False
+        def my_tool(param: str = "") -> str:
+            nonlocal tool_called
+            tool_called = True
+            return f"Tool result for {param}"
+
+        registry.register(
+            Tool(
+                name="my_tool",
+                description="Sample tool",
+                parameters={"type": "object", "properties": {"param": {"type": "string"}}},
+                func=my_tool,
+            )
+        )
+
+        # Mock LLM to return Action on Turn 1 and Final Answer on Turn 2
+        plugin = AsyncMock(spec=BaseLLMPlugin)
+        plugin.generate.side_effect = [
+            AgentResult(
+                content='Action: my_tool\nAction Input: {"param": "foo"}',
+                model="test-model",
+                prompt_tokens=50,
+                completion_tokens=20,
+            ),
+            AgentResult(
+                content="Final Answer: Task complete with tool!",
+                model="test-model",
+                prompt_tokens=100,
+                completion_tokens=25,
+            ),
+        ]
+
+        runner = AgentRunner(
+            llm_plugin=plugin,
+            memory_store=mock_memory,
+            observability_engine=engine,
+            tool_registry=registry,
+        )
+
+        result = await runner.run(session_id="s-react", user_prompt="Use tool")
+
+        assert tool_called is True
+        assert result.content == "Task complete with tool!"
+        assert plugin.generate.await_count == 2
+
+        # Check telemetry
+        timeline = storage.get_run_timeline(result.task_id)
+        assert timeline is not None
+        assert len(timeline.turns) == 2
+        assert timeline.summary.turns_count == 2
+        assert timeline.summary.tool_calls_count == 1
+

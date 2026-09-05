@@ -25,3 +25,5 @@ class AgentResult(BaseModel):
     model: str
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
+    task_id: Optional[str] = None
+

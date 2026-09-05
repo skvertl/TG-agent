@@ -14,6 +14,8 @@ services:
       - SYSTEM_PROMPT=Ты умный, полезный и вежливый ИИ-ассистент. Всегда отвечай строго на грамотном русском языке (или на языке вопроса пользователя). Никогда не используй китайские иероглифы.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/app/data
     secrets:
       - telegram_bot_token
       - allowed_user_ids

@@ -27,11 +27,20 @@ async def main() -> None:
         timeout=settings.ollama_timeout,
     )
 
-    # 2. Core Domain Orchestrator
+    # 2. Observability & Tools
+    from core.observability.engine import ObservabilityEngine
+    from core.tools.registry import ToolRegistry
+
+    obs_engine = ObservabilityEngine(project_name="tg-agent")
+    tool_registry = ToolRegistry(engine=obs_engine)
+
+    # 3. Core Domain Orchestrator
     runner = AgentRunner(
         llm_plugin=llm_plugin,
         memory_store=memory_store,
         system_prompt=settings.system_prompt,
+        observability_engine=obs_engine,
+        tool_registry=tool_registry,
     )
 
     # 3. Driving Telegram Adapter

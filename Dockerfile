@@ -41,6 +41,9 @@ COPY --chown=appuser:appuser adapters/ /app/adapters/
 COPY --chown=appuser:appuser config.py /app/config.py
 COPY --chown=appuser:appuser main.py /app/main.py
 
+# Создание директории для персистентной БД телеметрии
+RUN mkdir -p /app/data && chown -R appuser:appuser /app/data
+
 # Переключение на непривилегированного пользователя
 USER appuser
 

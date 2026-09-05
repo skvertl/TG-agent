@@ -15,6 +15,10 @@ ENV/
 .env.local
 *.log
 
+# Databases
+data/*.db
+*.db
+
 # Docker Secrets (Never commit secrets!)
 secrets/*.txt
 !secrets/*.example
