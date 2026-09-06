@@ -1,5 +1,4 @@
 import logging
-import urllib.parse
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
@@ -62,36 +61,10 @@ async def skills_list_handler(message: Message, runner: AgentRunner) -> None:
 
 @router.message(Command("morning_briefing", "morningbriefing", "morning-briefing", "weather"))
 async def morning_briefing_cmd_handler(message: Message, runner: AgentRunner) -> None:
-    """Прямой запуск скилла утренней сводки с поддержкой выбора города и графической карточки wttr.in."""
+    """Прямой запуск скилла утренней сводки с поддержкой выбора города."""
     session_id = str(message.from_user.id if message.from_user else message.chat.id)
     args = message.text.split(maxsplit=1) if message.text else []
     city = args[1].strip() if len(args) > 1 and args[1].strip() else None
-
-    # Карта транслитерации для популярных городов для wttr.in
-    city_map = {
-        "москва": "Moscow",
-        "минск": "Minsk",
-        "санкт-петербург": "Saint-Petersburg",
-        "питер": "Saint-Petersburg",
-        "спб": "Saint-Petersburg",
-        "киев": "Kyiv",
-        "лондон": "London",
-        "париж": "Paris",
-        "токио": "Tokyo",
-    }
-    raw_city = city or "Москва"
-    lookup_city = city_map.get(raw_city.lower(), raw_city)
-    photo_url = f"https://wttr.in/{urllib.parse.quote(lookup_city)}_0_lang=ru.png"
-
-    # Отправляем минималистичную карточку погоды в терминальном стиле
-    try:
-        await message.answer_photo(
-            photo=photo_url,
-            caption=f"🌤 **Погода в городе {raw_city}**",
-            parse_mode="Markdown",
-        )
-    except Exception as photo_err:
-        logger.warning("Could not send weather photo from wttr.in: %s", photo_err)
 
     if city:
         user_prompt = (

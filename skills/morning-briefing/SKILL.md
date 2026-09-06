@@ -14,10 +14,10 @@ This skill provides an automated morning briefing for the user by gathering live
    - If no city is specified, default to `Moscow` (Москва).
    - Call tool `exec` with command:
      ```bash
-     curl -s "https://wttr.in/<City>?format=3"
+     curl -s "https://wttr.in/<City>?0&Q&T&lang=ru"
      ```
-     *(Example for Moscow: `curl -s "https://wttr.in/Moscow?format=3"`; for London: `curl -s "https://wttr.in/London?format=3"`; for Minsk: `curl -s "https://wttr.in/Minsk?format=3"`).*
-   - Note the city name, temperature, weather conditions, and wind speed.
+     *(Example for Moscow: `curl -s "https://wttr.in/Moscow?0&Q&T&lang=ru"`; for London: `curl -s "https://wttr.in/London?0&Q&T&lang=ru"`; for Minsk: `curl -s "https://wttr.in/Minsk?0&Q&T&lang=ru"`).*
+   - Capture the minimalist ASCII terminal weather card.
 
 2. **Step 2: Check Current Date & Time**
    - Call tool `exec` with command:
@@ -29,6 +29,9 @@ This skill provides an automated morning briefing for the user by gathering live
 3. **Step 3: Synthesize Morning Digest**
    - Formulate a cheerful, professional morning report with:
      - 📅 Current date and day of week
-     - 🌤 Weather report for the specified city
+     - 🌤 Minimalist ASCII weather widget embedded in a monospace code block (```):
+       ```
+       <exact ASCII weather output from Step 1>
+       ```
      - 💡 Daily productivity recommendation or inspiration
    - Output as `Final Answer: <formatted digest>`
