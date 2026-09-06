@@ -3,7 +3,7 @@ import logging
 import sys
 from config import Settings
 from core.runner import AgentRunner
-from adapters.memory.stateless import StatelessMemoryStore
+from adapters.memory.sqlite import SqliteMemoryStore
 from adapters.llm.ollama_plugin import OllamaPlugin
 from adapters.telegram.bot import create_bot, create_dispatcher
 
@@ -16,11 +16,11 @@ logger = logging.getLogger("app.main")
 
 
 async def main() -> None:
-    logger.info("Initializing Telegram Ollama Gateway...")
+    logger.info("Initializing Telegram Autonomous Agent Gateway...")
     settings = Settings()
 
     # 1. Driven Adapters
-    memory_store = StatelessMemoryStore()
+    memory_store = SqliteMemoryStore()
     llm_plugin = OllamaPlugin(
         base_url=settings.ollama_base_url,
         model_name=settings.ollama_model,
@@ -41,6 +41,7 @@ async def main() -> None:
         system_prompt=settings.system_prompt,
         observability_engine=obs_engine,
         tool_registry=tool_registry,
+        skills_dir="skills",
     )
 
     # 3. Driving Telegram Adapter

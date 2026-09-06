@@ -4,12 +4,19 @@ from abc import ABC, abstractmethod
 from core.models import ChatMessage
 
 
+from typing import Optional
+
+
 class BaseMemoryStore(ABC):
     """Abstract port for dialogue context storage."""
 
     @abstractmethod
-    async def get_history(self, session_id: str) -> list[ChatMessage]:
-        """Retrieve message history for specified session."""
+    async def get_history(
+        self, session_id: str, limit: Optional[int] = None
+    ) -> list[ChatMessage]:
+        """Retrieve message history for specified session.
+        If limit is specified, returns at most the latest `limit` messages in chronological order.
+        """
         pass
 
     @abstractmethod

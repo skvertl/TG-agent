@@ -3,10 +3,15 @@ from core.ports.memory_store import BaseMemoryStore
 from core.models import ChatMessage
 
 
+from typing import Optional
+
+
 class StatelessMemoryStore(BaseMemoryStore):
     """Stateless memory store returning empty history for isolated single-turn requests."""
 
-    async def get_history(self, session_id: str) -> list[ChatMessage]:
+    async def get_history(
+        self, session_id: str, limit: Optional[int] = None
+    ) -> list[ChatMessage]:
         """Always return empty list for stateless execution."""
         return []
 

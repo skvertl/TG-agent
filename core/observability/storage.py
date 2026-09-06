@@ -1,7 +1,8 @@
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Generator
 from core.observability.models import (
     LLMCallSpan,
     ToolCallSpan,
@@ -32,13 +33,19 @@ class TelemetryStorage:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS llm_spans (

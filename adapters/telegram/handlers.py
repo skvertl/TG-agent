@@ -16,10 +16,12 @@ router = Router(name="main_router")
 async def start_handler(message: Message) -> None:
     """Обработчик команды /start."""
     text = (
-        "👋 **Привет!** Я Telegram-шлюз к локальной нейросети через **Ollama**.\n\n"
-        "⚡ **Режим работы:** `Stateless` (одноразовый запрос без сохранения истории диалога).\n"
-        "📊 **Мониторинг:** используйте команду /token_report для просмотра статистики токенов.\n"
-        "💬 Просто отправьте мне любой вопрос или задачу, и я сгенерирую ответ!"
+        "👋 **Привет!** Я автономный AI-агент на базе локальной модели **Ollama**.\n\n"
+        "🧠 **Режим работы:** `Stateful Agent` (непрерывный контекст диалога с памятью).\n"
+        "🧹 **Новый чат:** используйте команду /new для сброса контекста.\n"
+        "🛠 **Возможности:** выполнение консольных команд (`exec`), чтение файлов и выполнение сценариев (`skills`).\n"
+        "📊 **Мониторинг:** команда /token\\_report для просмотра статистики и затрат токенов.\n\n"
+        "💬 Отправьте мне вопрос, задачу или команду!"
     )
     await message.answer(text, parse_mode="Markdown")
 
@@ -29,19 +31,104 @@ async def help_handler(message: Message) -> None:
     """Обработчик команды /help."""
     text = (
         "ℹ️ **Справка и помощь:**\n\n"
-        "• Отправьте любое текстовое сообщение для запроса к локальной LLM.\n"
-        "• Ответы длиннее 4000 символов автоматически делятся на части без повреждения блоков кода.\n"
-        "• Допустимый таймаут генерации: 60 секунд.\n"
+        "• Отправьте любое текстовое сообщение для запроса к автономному агенту.\n"
+        "• Агент сохраняет контекст диалога. Чтобы начать с чистого листа, отправьте /new.\n"
+        "• Ответы длиннее 4000 символов автоматически делятся на части.\n"
         "• Команды:\n"
-        "  /start — перезапуск и приветствие\n"
+        "  /start — приветствие и статус агента\n"
         "  /help — данная справка\n"
-        "  /token_report — глобальная сводка по токенам, затратам и таймлайн последнего запуска\n"
-        "  /token_report <task_id> — детальный таймлайн конкретной задачи"
+        "  /new — начать новый диалог (очистить контекст)\n"
+        "  /morning\\_briefing [город] — утренняя сводка (по умолчанию Москва, например /morning\\_briefing Минск)\n"
+        "  /weather [город] — прогноз погоды (например /weather London)\n"
+        "  /system\\_health — запустить диагностику контейнера и системы\n"
+        "  /skills — список доступных сценариев (скиллов)\n"
+        "  /token\\_report — сводка по токенам, затратам и таймлайн последнего запуска\n"
+        "  /token\\_report <task\\_id> — детальный таймлайн конкретной задачи"
     )
     await message.answer(text, parse_mode="Markdown")
 
 
-@router.message(Command("token_report"))
+@router.message(Command("skills", "skill"))
+async def skills_list_handler(message: Message, runner: AgentRunner) -> None:
+    """Обработчик команды /skills: список доступных скиллов."""
+    summary = runner._get_skills_summary()
+    if not summary:
+        text = "⚙️ В каталоге `skills/` пока нет зарегистрированных сценариев."
+    else:
+        text = f"🛠 **Доступные сценарии (Skills):**\n{summary}\n\nВы можете запустить их командами /morning\\_briefing [город], /system\\_health или обычным сообщением в чат."
+    await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("morning_briefing", "morningbriefing", "morning-briefing", "weather"))
+async def morning_briefing_cmd_handler(message: Message, runner: AgentRunner) -> None:
+    """Прямой запуск скилла утренней сводки с поддержкой выбора города (по умолчанию Москва)."""
+    session_id = str(message.from_user.id if message.from_user else message.chat.id)
+    args = message.text.split(maxsplit=1) if message.text else []
+    city = args[1].strip() if len(args) > 1 and args[1].strip() else None
+
+    if city:
+        user_prompt = (
+            f"Выполни утреннюю сводку по скиллу morning-briefing для города {city}: "
+            f"узнай погоду в городе {city}, проверь дату и сформируй дайджест."
+        )
+    else:
+        user_prompt = (
+            "Выполни утреннюю сводку по скиллу morning-briefing (город по умолчанию Москва): "
+            "узнай погоду, проверь дату и сформируй дайджест."
+        )
+
+    async with keep_typing(message.bot, message.chat.id):
+        try:
+            result = await runner.run(
+                session_id=session_id,
+                user_prompt=user_prompt,
+            )
+            chunks = split_message(result.content, max_chunk_size=4000)
+            for chunk in chunks:
+                try:
+                    await message.answer(chunk, parse_mode="Markdown")
+                except Exception:
+                    await message.answer(chunk)
+        except Exception as e:
+            logger.exception("Error executing morning_briefing command: %s", e)
+            await message.answer(f"⚠️ Ошибка при выполнении утренней сводки: {e}")
+
+
+@router.message(Command("system_health", "systemhealth", "system-health", "health"))
+async def system_health_cmd_handler(message: Message, runner: AgentRunner) -> None:
+    """Прямой запуск скилла диагностики системы."""
+    session_id = str(message.from_user.id if message.from_user else message.chat.id)
+    async with keep_typing(message.bot, message.chat.id):
+        try:
+            result = await runner.run(
+                session_id=session_id,
+                user_prompt="Выполни диагностику системы по скиллу system-health: проверь ресурсы, диск, ОС и доступность Ollama API.",
+            )
+            chunks = split_message(result.content, max_chunk_size=4000)
+            for chunk in chunks:
+                try:
+                    await message.answer(chunk, parse_mode="Markdown")
+                except Exception:
+                    await message.answer(chunk)
+        except Exception as e:
+            logger.exception("Error executing system_health command: %s", e)
+            await message.answer(f"⚠️ Ошибка при выполнении диагностики системы: {e}")
+
+
+@router.message(Command("new", "clear", "reset"))
+async def new_chat_handler(message: Message, runner: AgentRunner) -> None:
+    """Обработчик команды /new: сброс и создание нового контекста диалога."""
+    session_id = str(message.from_user.id if message.from_user else message.chat.id)
+    if hasattr(runner, "memory_store") and runner.memory_store:
+        await runner.memory_store.clear(session_id)
+    text = (
+        "🧹 **Контекст очищен!**\n\n"
+        "Начат новый чистый диалог. Предыдущая история больше не отправляется модели."
+    )
+    await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("token_report", "tokenreport", "tokens", "finops"))
 async def token_report_handler(message: Message, runner: AgentRunner) -> None:
     """Обработчик команды /token_report: глобальная сводка, история и таймлайн."""
     from core.observability.presenter import format_telegram_report, format_timeline_markdown

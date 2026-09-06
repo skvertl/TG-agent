@@ -21,6 +21,11 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 # ==========================================
 FROM python:3.11-slim AS runner
 
+# Установка curl и ca-certificates для утилит exec
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Создание непривилегированного пользователя appuser (UID 10001)
 RUN groupadd -g 10001 appuser && \
     useradd -u 10001 -g appuser -s /bin/bash -m appuser
@@ -38,6 +43,7 @@ ENV PATH="/home/appuser/.local/bin:${PATH}" \
 # Копирование исходного кода приложения
 COPY --chown=appuser:appuser core/ /app/core/
 COPY --chown=appuser:appuser adapters/ /app/adapters/
+COPY --chown=appuser:appuser skills/ /app/skills/
 COPY --chown=appuser:appuser config.py /app/config.py
 COPY --chown=appuser:appuser main.py /app/main.py
 

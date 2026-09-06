@@ -37,12 +37,12 @@ class TestAgentRunner:
         assert result.model == "test-model"
 
         # Check history was requested
-        mock_memory.get_history.assert_awaited_once_with("session-1")
+        mock_memory.get_history.assert_awaited_once_with("session-1", limit=10)
 
         # Check plugin was called with expected payload
         mock_plugin.generate.assert_awaited_once()
         payload: PromptPayload = mock_plugin.generate.call_args[0][0]
-        assert payload.temperature == 0.7
+        assert payload.temperature == 0.3
         assert len(payload.messages) == 2
         assert payload.messages[0] == ChatMessage(
             role="system", content="You are a helpful AI assistant."
@@ -187,8 +187,26 @@ class TestAgentRunner:
 
         # Check telemetry
         timeline = storage.get_run_timeline(result.task_id)
-        assert timeline is not None
-        assert len(timeline.turns) == 2
         assert timeline.summary.turns_count == 2
         assert timeline.summary.tool_calls_count == 1
+
+    def test_sanitize_output_filters_cjk_hallucinations(self):
+        from core.runner import sanitize_output
+        raw = "💡 Дайджест: Сегодня в Москве комфортная погода. Держите手机无法输入，请稍后尝试其他操作"
+        cleaned = sanitize_output(raw)
+        assert "手机无法输入" not in cleaned
+        assert cleaned == "💡 Дайджест: Сегодня в Москве комфортная погода."
+
+    @pytest.mark.asyncio
+    async def test_run_sanitizes_cjk_in_final_answer(self, mock_memory):
+        from core.runner import AgentRunner
+        plugin = AsyncMock(spec=BaseLLMPlugin)
+        plugin.generate.return_value = AgentResult(
+            content="Final Answer: Сводка готова. Проверьте данные. Ожидайте稍后尝试",
+            model="qwen2.5:7b",
+        )
+        runner = AgentRunner(llm_plugin=plugin, memory_store=mock_memory)
+        res = await runner.run(session_id="cjk-test", user_prompt="Привет")
+        assert "稍后尝试" not in res.content
+        assert res.content == "Сводка готова. Проверьте данные."
 

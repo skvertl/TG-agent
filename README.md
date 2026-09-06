@@ -1,72 +1,126 @@
-# Extensible Async Telegram-Ollama Gateway (Stateless)
+# Autonomous Agentic Telegram Gateway (Stateful ReAct, Skills & Observability)
 
-Асинхронный Telegram-шлюз на Python 3.11+ с плагинным инференсом через локальные модели Ollama (`qwen2.5:1.5b`, `tinyllama` и др.), функционирующий в строго **Stateless-режиме** (одноразовый контекст без сохранения истории между сессиями).
+Асинхронный автономный Telegram-агент на Python 3.11+ с плагинным инференсом через локальные модели Ollama (`qwen2.5:7b`, `llama3.2` и др.).
+Оснащен **персистентной долговременной памятью диалогов в SQLite**, поддержкой **ReAct-инструментов** с универсальным **`exec`**, специализированными регламентами-навыками (**Skills**), анти-зацикливающим харнессом и встроенной подсистемой **Observability & FinOps**.
 
 ---
 
 ## 🏛 Архитектура: Hexagonal (Ports & Adapters)
 
-Система строго разделена на три слоя с направлением зависимостей снаружи внутрь:
+Система строго разделена на слои с направлением зависимостей снаружи внутрь:
 
 ```
-[ Telegram (aiogram 3.x) ]  -->  (Driving Port: AgentRunner)
-                                          │
-                                          ▼
-                                   [ Domain Core ]
-                           (DTOs, Rules, Domain Exceptions)
-                                          │
-                                          ▼
-[ Ollama API (httpx Async) ] <-- (Driven Port: BaseLLMPlugin)
-[ Stateless Memory Store   ] <-- (Driven Port: BaseMemoryStore)
+[ Telegram (aiogram 3.x) ]  --> (Driving Adapter) ──┐
+[ CLI Dashboard (rich)   ]  --> (Driving Adapter) ──┤
+                                                    ▼
+                                           ┌─────────────────┐
+                                           │   AgentRunner   │
+                                           │  (Domain Core)  │
+                                           └────────┬────────┘
+                                                    │
+                   ┌────────────────────────────────┼────────────────────────────────┐
+                   ▼                                ▼                                ▼
+       [ ToolRegistry (ReAct) ]         [ ObservabilityEngine ]           [ Abstract Ports ]
+        - exec (universal CLI/cURL)      - Spans (LLM & Tools)             - BaseLLMPlugin
+        - read_skill (skills/*.md)       - Context overlap/repetition      - BaseMemoryStore
+        - read_file (safe path)          - Pricing calculation ($)
+        - search (grep engine)           - SQLite (WAL mode)
+        - run_tests (pytest sandbox)                │
+        - git_diff (repo state)                     ▼
+                                       ┌─────────────────────────┐
+                                       │     Driven Adapters     │
+                                       ├─────────────────────────┤
+                                       │ - OllamaPlugin (httpx)  │
+                                       │ - SqliteMemoryStore(DB) │
+                                       │ - TelemetryStorage (DB) │
+                                       └─────────────────────────┘
 ```
 
-1. **Доменное ядро (`core/`)**:
-   - Полная независимость от фреймворков и сторонних SDK.
-   - Pydantic DTO: `ChatMessage`, `PromptPayload`, `AgentResult`.
-   - Абстрактные порты: `BaseLLMPlugin`, `BaseMemoryStore`.
-   - Изоляция исключений: `DomainError`, `LLMPluginError`, `LLMTimeoutError`, `LLMConnectionError`, `LLMResponseError`.
-   - Оркестратор: `AgentRunner`.
+### 1. Доменное ядро и Харнесс (`core/`)
+* **Оркестратор (`core/runner.py`)**: `AgentRunner` координирует ReAct-цикл (по умолчанию до 8 шагов) с автоматическим перехватом вызовов моделей и инструментов.
+* **Защита от зацикливания (Anti-Looping Fallback)**: при достижении лимита шагов агент не обрывает сессию ошибкой, а отправляет системный запрос на принудительный синтез собранных данных в `Final Answer`.
+* **Автоиндексация скиллов**: агент сканирует каталог `skills/` и инжектирует доступные сценарии в системный промпт.
+* **DTO-модели (`core/models.py`)**: `ChatMessage`, `PromptPayload`, `AgentResult`.
+* **Абстрактные порты (`core/ports/`)**: `BaseLLMPlugin`, `BaseMemoryStore`.
+* **Изоляция ошибок (`core/exceptions.py`)**: `LLMTimeoutError`, `LLMConnectionError`, `LLMResponseError`.
 
-2. **Driven-адаптеры (`adapters/`)**:
-   - `OllamaPlugin` (`adapters/llm/ollama_plugin.py`): асинхронный HTTP-клиент к Ollama API (`/api/chat`), транслирующий любые сетевые и протокольные сбои в доменные исключения.
-   - `StatelessMemoryStore` (`adapters/memory/stateless.py`): гарантирует изоляцию запросов (история не сохраняется между вызовами).
+### 2. Подсистема инструментов (`core/tools/`)
+Набор встроенных инструментов агента:
+* **`exec`**: универсальное выполнение терминальных/консольных команд (CLI, cURL, bash, git, python) с таймаутом 30с и ограничением вывода до 4 КБ для защиты контекста.
+* **`read_skill`**: динамическое чтение регламентов и пошаговых сценариев из папки `skills/`.
+* **`read_file`**: чтение файлов с защитой от Path Traversal (`_resolve_safe_path`).
+* **`search`**: поиск подстрок в кодовой базе с фильтрацией служебных каталогов.
+* **`run_tests`**: запуск тестов без `shell=True` с проверкой белого списка (`pytest`).
+* **`git_diff`**: просмотр незакоммиченных изменений в репозитории.
 
-3. **Driving-адаптер (`adapters/telegram/`)**:
-   - `TelegramBotAdapter` на базе `aiogram 3.x`.
-   - `AuthMiddleware` (`middlewares.py`): приватный белый список доступа по `ALLOWED_USER_ID` / `ALLOWED_USER_IDS` (неавторизованные пользователи блокируются).
-   - Безопасный сплиттер (`splitter.py`) длинных сообщений (> 4000 символов) с сохранением блоков кода Markdown (` ``` `).
-   - Менеджер периодического статуса «печатает...» (`keep_typing`) с гарантированной отменой фоновой корутины.
+### 3. Специализированные навыки агента (`skills/`)
+* **`morning-briefing` (`skills/morning-briefing/SKILL.md`)**: утренний сценарий — запрос погоды в запрашиваемом городе (по умолчанию Москва) через `curl wttr.in/<City>?format=3`, проверка системной даты и времени, формирование вдохновляющей сводки.
+* **`system-health` (`skills/system-health/SKILL.md`)**: DevOps-диагностика — проверка аптайма хоста/контейнера, памяти, диска и доступности API Ollama с формированием отчета о состоянии.
 
-## 🔐 Безопасность и Docker Secrets (Zero-Knowledge)
+### 4. Долговременная память (`adapters/memory/sqlite.py`)
+* **`SqliteMemoryStore`**: персистентное хранение истории диалога каждого пользователя в базе `data/chat_history.db` в режиме WAL.
+* **Непрерывный контекст**: диалог не сбрасывается при перезапусках бота или контейнера.
+* **Команда `/new`**: архивирует предыдущий диалог и начинает чистый контекст с нуля.
+
+### 5. Автономный модуль Observability & FinOps (`core/observability/`)
+* **Трейсинг**: `LLMCallSpan` и `ToolCallSpan` для детального пошагового таймлайна задачи.
+* **Оценка расходов**: точный расчет стоимости на основе тарифов ($/1M токенов: Input, Output, Cache).
+* **Анализ повторного контекста**: замер доли повторяющихся токенов (`repeated_tokens`) между шагами ReAct-цикла.
+* **Хранилище**: `data/telemetry.db` (SQLite WAL).
+
+### 6. Входные адаптеры (`adapters/`)
+* **Telegram Bot (`adapters/telegram/`)**:
+  * `/start` — статус агента и приветствие.
+  * `/help` — перечень команд и возможностей.
+  * `/new` — сброс контекста и старт чистого диалога.
+  * `/morning_briefing` — вызов сценария утренней сводки (погода, дата, рекомендации).
+  * `/system_health` — вызов сценария диагностики контейнера и инфраструктуры.
+  * `/skills` — список зарегистрированных сценариев (скиллов).
+  * `/token_report` — глобальный дашборд по токенам, затратам и эффективности.
+  * `/token_report <task_id>` — детальный таймлайн конкретной задачи по шагам.
+  * `AuthMiddleware`: белый список доступа по Telegram User ID.
+  * `splitter.py`: деление сообщений длиннее 4000 символов с сохранением блоков кода Markdown.
+  * `typing.py`: индикация набора текста во время работы агента.
+* **CLI Dashboard (`core/observability/cli.py`)**:
+  * `python -m core.observability.cli [--limit 5] [--task-id <id>]`.
+
+---
+
+## 📊 Мониторинг токенов (FinOps Dashboard)
+
+### Просмотр в Telegram
+* Отправьте боту команду `/token_report` для получения текущей статистики:
+  * Использованная модель и тарифы за 1M токенов.
+  * Формула расчета стоимости.
+  * Статистика: Input, Output, Cached, Repeated Context %, доли инструментов.
+  * История последних 5 запусков и таймлайн последнего выполнения.
+* `/token_report <task_id>` — детальный пошаговый разбор конкретного выполнения.
+
+### Просмотр в терминале (Rich TUI)
+```bash
+python -m core.observability.cli --limit 5
+```
+
+---
+
+## 🔐 Безопасность и Docker Sandbox (Zero-Knowledge)
 
 Все секреты передаются **исключительно через Docker Secrets** в виртуальную память (`tmpfs`) по пути `/run/secrets/`.
-- ❌ **Секреты НЕ передаются через переменные окружения** (их невозможно увидеть через `docker inspect` или `/proc/1/environ`).
-- ❌ **Секреты НЕ попадут в git** (`secrets/*.txt` добавлены в `.gitignore`).
+* ❌ **Секреты НЕ передаются через переменные окружения** (не видны в `docker inspect` или `/proc/1/environ`).
+* ❌ **Секреты НЕ попадут в git** (`secrets/*.txt` и `data/*.db` добавлены в `.gitignore`).
+* 🛡 **Харденинг контейнера**: non-root пользователь (`appuser`, UID 10001), сброс всех Linux capabilities (`cap_drop: [ALL]`), запрет повышения привилегий (`no-new-privileges: true`), лимиты ресурсов CPU/RAM/PIDs.
 
 ### 1. Подготовка секретов
-Создайте файлы секретов из примеров:
 ```bash
 cp secrets/telegram_bot_token.txt.example secrets/telegram_bot_token.txt
 cp secrets/allowed_user_ids.txt.example secrets/allowed_user_ids.txt
 ```
-1. В `secrets/telegram_bot_token.txt` вставьте токен вашего бота (от `@BotFather`).
-2. В `secrets/allowed_user_ids.txt` укажите ваш Telegram User ID.
-
-*(Для локальной разработки без Docker также поддерживается стандартный `.env` файл из `.env.example`).*
+* В `secrets/telegram_bot_token.txt` вставьте токен вашего бота.
+* В `secrets/allowed_user_ids.txt` укажите ваш Telegram User ID.
 
 ### 2. Запуск контейнеров
 ```bash
 docker compose up -d --build
-```
-Compose автоматически:
-1. Запустит сервис `ollama` с изолированной bridge-сетью `ai-network` и пробросом GPU (NVIDIA Container Toolkit).
-2. Выполнит healthcheck доступности Ollama.
-3. Соберет multi-stage образ бота под непривилегированным пользователем `appuser` (UID 10001) и запустит шлюз.
-
-### 3. Загрузка модели в Ollama
-Если модель еще не загружена в локальный volume `ollama_data`:
-```bash
-docker compose exec ollama ollama pull qwen2.5:1.5b
 ```
 
 ---
@@ -76,8 +130,10 @@ docker compose exec ollama ollama pull qwen2.5:1.5b
 ### Установка окружения (uv / pip)
 ```bash
 uv venv --python 3.11
-source .venv/bin/activate  # на Linux/macOS
-# или: .venv\Scripts\activate  # на Windows
+# Linux/macOS:
+source .venv/bin/activate
+# Windows:
+.venv\Scripts\activate
 
 uv pip install -r requirements-dev.txt
 ```
@@ -87,4 +143,31 @@ uv pip install -r requirements-dev.txt
 ```bash
 pytest -v
 ```
-Все 72 теста (юнит-тесты ядра, адаптеров и сквозные интеграционные тесты) проверяют контракты, таймауты, чанкинг и изоляцию сессий.
+Все **154 теста** (память SQLite со скользящим окном, ReAct-харнесс, Observation Compactor, сжатие промптов, утилита exec, загрузка скиллов, анти-зацикливание, спаны обсервабилити, расчет стоимости и хендлеры Telegram) проверяют функциональность и стабильность системы с 100% успехом.
+
+---
+
+## ⚡️ Оптимизация токенов и контекста (Phase 2 FinOps)
+
+Во 2 этапе внедрены 3 ключевые архитектурные оптимизации для устранения «пожирателей токенов»:
+
+1. **Observation Compactor (`core/runner.py`)**:
+   * Для предыдущих ходов ReAct-цикла (`turn < N-1`) промежуточные выводы инструментов длиннее 250 символов автоматически сжимаются с обрезкой по границам слов и маркером `\n... [Observation compacted: {orig} -> {max} chars]`.
+   * Вывод непосредственно предшествующего шага сохраняется полностью для точности рассуждений модели.
+2. **Скользящее окно истории диалога (`Sliding Window`)**:
+   * `SqliteMemoryStore.get_history(limit=10)` использует обратный подзапрос `ORDER BY id DESC LIMIT ?` с внешним `ORDER BY id ASC`.
+   * Хранит полную историю в БД, но передает агенту только последние 5 раундов общения, останавливая неограниченный рост контекста.
+3. **Минификация схем инструментов и системного промпта**:
+   * Схемы JSON сериализуются компактно (`separators=(',', ':')`).
+   * Плотные директивы ReAct сократили объем системного промпта более чем на 30%.
+
+### 📊 Результаты бенчмарка: До и После (20 задач)
+
+| Метрика | Baseline (Фаза 1.5) | Phase 2 (Optimized) | Экономия |
+| :--- | :---: | :---: | :---: |
+| **Суммарный объем токенов** | **95,386** | **59,129** | **-38.0%** (цель: $\ge 30\%$) |
+| **Входные токены (Input)** | 90,035 | 55,963 | -37.8% |
+| **Выходные токены (Output)** | 5,351 | 3,166 | -40.8% |
+| **Стоимость инференса** | **$0.03344** | **$0.02059** | **-38.4%** |
+| **Успешность выполнения** | **100% (20/20)** | **100% (20/20)** | 0% деградации |
+

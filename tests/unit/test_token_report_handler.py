@@ -65,3 +65,16 @@ class TestTokenReportHandler:
         text = mock_message.answer.call_args[0][0]
         assert "task-seed-1" in text
         assert "$0.0027" in text
+
+    @pytest.mark.asyncio
+    async def test_tokenreport_alias_without_underscore(self, mock_message, tmp_path):
+        mock_message.text = "/tokenreport"
+        storage = TelemetryStorage(db_path=str(tmp_path / "tg_test_alias.db"))
+        engine = ObservabilityEngine(storage=storage)
+        runner = AsyncMock(spec=AgentRunner)
+        runner.observability_engine = engine
+
+        await token_report_handler(mock_message, runner)
+        mock_message.answer.assert_awaited_once()
+        text = mock_message.answer.call_args[0][0]
+        assert "AI AGENT OBSERVABILITY" in text
