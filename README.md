@@ -96,6 +96,10 @@
   * История последних 5 запусков и таймлайн последнего выполнения.
 * `/token_report <task_id>` — детальный пошаговый разбор конкретного выполнения.
 
+<p align="center">
+  <img src="docs/images/token_report_dashboard.png" alt="Telegram /token_report Dashboard" width="420"/>
+</p>
+
 ### Просмотр в терминале (Rich TUI)
 ```bash
 python -m core.observability.cli --limit 5

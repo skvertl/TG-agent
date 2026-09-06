@@ -16,6 +16,10 @@
 | **Cumulative Inference Cost** | **<= $0.02340 USD** | $0.03344 | **$0.02059** (-38.4%) | ✅ **PASSED** |
 | **Repeated Context Ratio** | **< 23.7%** | 23.7% | **40.2%** | ❌ FAILED |
 
+<p align="center">
+  <img src="docs/images/token_report_dashboard.png" alt="Live Telegram /token_report Dashboard" width="380"/>
+</p>
+
 ---
 
 ## 📈 Side-by-Side Comparative Metrics (Baseline vs. Phase 2)
