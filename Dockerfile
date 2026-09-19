@@ -21,9 +21,9 @@ RUN pip install --no-cache-dir --user -r requirements.txt
 # ==========================================
 FROM python:3.11-slim AS runner
 
-# Установка curl и ca-certificates для утилит exec
+# Установка curl, ca-certificates и libgomp1 (OpenMP для ONNX Runtime)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl ca-certificates \
+    curl ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Создание непривилегированного пользователя appuser (UID 10001)

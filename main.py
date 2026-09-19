@@ -30,9 +30,16 @@ async def main() -> None:
     # 2. Observability & Tools
     from core.observability.engine import ObservabilityEngine
     from core.tools.registry import ToolRegistry
+    from adapters.embedding.fastembed_provider import FastEmbedProvider
+    from adapters.rag.sqlite_vec_store import SqliteVecStore
+    from core.tools.rag import create_rag_search_tool
 
     obs_engine = ObservabilityEngine(project_name="tg-agent")
     tool_registry = ToolRegistry(engine=obs_engine)
+
+    embedding_provider = FastEmbedProvider()
+    rag_store = SqliteVecStore()
+    tool_registry.register(create_rag_search_tool(rag_store=rag_store, embedding_provider=embedding_provider))
 
     # 3. Core Domain Orchestrator
     runner = AgentRunner(
@@ -44,11 +51,13 @@ async def main() -> None:
         skills_dir="skills",
     )
 
-    # 3. Driving Telegram Adapter
+    # 4. Driving Telegram Adapter
     bot = create_bot(token=settings.telegram_bot_token)
     dp = create_dispatcher(
         runner=runner,
         allowed_user_ids=settings.allowed_user_ids,
+        rag_store=rag_store,
+        embedding_provider=embedding_provider,
     )
     if settings.allowed_user_ids:
         logger.info("Access whitelist active: %s", settings.allowed_user_ids)

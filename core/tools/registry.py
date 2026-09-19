@@ -38,6 +38,7 @@ class ToolRegistry:
         task_id: str,
         turn_number: int,
         arguments: Dict[str, Any],
+        session_id: Optional[str] = None,
     ) -> str:
         tool = self._tools.get(tool_name)
         if not tool:
@@ -51,7 +52,21 @@ class ToolRegistry:
             input_data=arguments,
         ) as span:
             try:
-                output = tool.execute(**arguments)
+                call_args = dict(arguments)
+                target_func = getattr(tool, "func", tool.execute)
+                import inspect
+                sig = inspect.signature(target_func)
+                if "session_id" in sig.parameters or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+                ):
+                    if "session_id" not in call_args and session_id is not None:
+                        call_args["session_id"] = session_id
+                output = tool.execute(**call_args)
+            except TypeError as te:
+                if "session_id" in str(te):
+                    output = tool.execute(**arguments)
+                else:
+                    output = f"Error executing '{tool_name}': {str(te)}"
             except Exception as e:
                 output = f"Error executing '{tool_name}': {str(e)}"
             span.set_output(output)

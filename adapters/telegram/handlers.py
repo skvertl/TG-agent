@@ -1,8 +1,10 @@
 import logging
+from typing import Optional
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.types import Message
 from core.runner import AgentRunner
+from core.ports import BaseRAGStore
 from core.exceptions import LLMTimeoutError, LLMConnectionError, LLMResponseError
 from adapters.telegram.splitter import split_message
 from adapters.telegram.typing import keep_typing
@@ -38,6 +40,8 @@ async def help_handler(message: Message) -> None:
         "  /start — приветствие и статус агента\n"
         "  /help — данная справка\n"
         "  /new — начать новый диалог (очистить контекст)\n"
+        "  /documents — список загруженных документов\n"
+        "  /delete <ID или имя файла> — удалить документ из базы\n"
         "  /morning\\_briefing [город] — утренняя сводка (по умолчанию Москва, например /morning\\_briefing Минск)\n"
         "  /weather [город] — прогноз погоды (например /weather London)\n"
         "  /system\\_health — запустить диагностику контейнера и системы\n"
@@ -57,6 +61,93 @@ async def skills_list_handler(message: Message, runner: AgentRunner) -> None:
     else:
         text = f"🛠 **Доступные сценарии (Skills):**\n{summary}\n\nВы можете запустить их командами /morning\\_briefing [город], /system\\_health или обычным сообщением в чат."
     await message.answer(text, parse_mode="Markdown")
+
+
+@router.message(Command("documents", "docs", "mydocs"))
+async def documents_list_handler(
+    message: Message,
+    rag_store: Optional[BaseRAGStore] = None,
+) -> None:
+    """Обработчик команды /documents: список проиндексированных документов пользователя."""
+    if not rag_store:
+        await message.answer("⚙️ RAG-хранилище документов не подключено.", parse_mode="Markdown")
+        return
+
+    user_id = str(message.from_user.id if message.from_user else message.chat.id)
+    docs = await rag_store.list_documents(user_id)
+
+    if not docs:
+        await message.answer(
+            "📚 У вас пока нет загруженных документов.\n\n"
+            "Отправьте файл (.pdf, .docx, .txt, .md) в чат для индексации.",
+            parse_mode="Markdown",
+        )
+        return
+
+    lines = ["📚 **Ваши документы:**\n"]
+    for i, d in enumerate(docs, start=1):
+        size_str = (
+            f"{d.file_size_bytes / (1024 * 1024):.1f} MB"
+            if d.file_size_bytes >= 1024 * 1024
+            else f"{d.file_size_bytes / 1024:.1f} KB"
+        )
+        date_str = (
+            d.created_at.strftime("%Y-%m-%d %H:%M")
+            if hasattr(d.created_at, "strftime")
+            else str(d.created_at)[:16]
+        )
+        doc_id_short = d.id[:8]
+        lines.append(
+            f"{i}. 📄 **{d.filename}**\n"
+            f"   • ID: `{doc_id_short}`\n"
+            f"   • Страниц: {d.page_count} | Чанков: {d.chunk_count} | {size_str}\n"
+            f"   • Дата: {date_str}"
+        )
+
+    lines.append("\nДля удаления документа отправьте: /delete <ID или имя файла>")
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+@router.message(Command("delete", "del", "remove"))
+async def document_delete_handler(
+    message: Message,
+    command: Optional[CommandObject] = None,
+    rag_store: Optional[BaseRAGStore] = None,
+) -> None:
+    """Обработчик команды /delete: удаление документа по ID или имени файла."""
+    doc_ref = ""
+    if command and command.args:
+        doc_ref = command.args.strip()
+    elif message.text:
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1:
+            doc_ref = parts[1].strip()
+
+    if not doc_ref:
+        await message.answer(
+            "ℹ️ Использование: /delete <ID документа или имя файла>",
+            parse_mode="Markdown",
+        )
+        return
+
+    if not rag_store:
+        await message.answer("⚙️ RAG-хранилище документов не подключено.", parse_mode="Markdown")
+        return
+
+    user_id = str(message.from_user.id if message.from_user else message.chat.id)
+    success = await rag_store.delete_document(user_id, doc_ref)
+
+    if success:
+        await message.answer(
+            f"🗑 Документ '{doc_ref}' успешно удален из базы и векторного индекса.",
+            parse_mode="Markdown",
+        )
+    else:
+        await message.answer(
+            f"❌ Документ '{doc_ref}' не найден в вашем списке документов.",
+            parse_mode="Markdown",
+        )
+
 
 
 @router.message(Command("morning_briefing", "morningbriefing", "morning-briefing", "weather"))

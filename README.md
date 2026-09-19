@@ -10,42 +10,45 @@
 Система строго разделена на слои с направлением зависимостей снаружи внутрь:
 
 ```
-[ Telegram (aiogram 3.x) ]  --> (Driving Adapter) ──┐
-[ CLI Dashboard (rich)   ]  --> (Driving Adapter) ──┤
-                                                    ▼
-                                           ┌─────────────────┐
-                                           │   AgentRunner   │
-                                           │  (Domain Core)  │
-                                           └────────┬────────┘
-                                                    │
-                   ┌────────────────────────────────┼────────────────────────────────┐
-                   ▼                                ▼                                ▼
-       [ ToolRegistry (ReAct) ]         [ ObservabilityEngine ]           [ Abstract Ports ]
-        - exec (universal CLI/cURL)      - Spans (LLM & Tools)             - BaseLLMPlugin
-        - read_skill (skills/*.md)       - Context overlap/repetition      - BaseMemoryStore
-        - read_file (safe path)          - Pricing calculation ($)
-        - search (grep engine)           - SQLite (WAL mode)
-        - run_tests (pytest sandbox)                │
-        - git_diff (repo state)                     ▼
-                                       ┌─────────────────────────┐
-                                       │     Driven Adapters     │
-                                       ├─────────────────────────┤
-                                       │ - OllamaPlugin (httpx)  │
-                                       │ - SqliteMemoryStore(DB) │
-                                       │ - TelemetryStorage (DB) │
-                                       └─────────────────────────┘
+[ Telegram (aiogram 3.x) ]  --> (Driving Adapter: Messages & Docs) ──┐
+[ CLI Dashboard (rich)   ]  --> (Driving Adapter: Observability)   ──┤
+                                                                     ▼
+                                                            ┌─────────────────┐
+                                                            │   AgentRunner   │
+                                                            │  (Domain Core)  │
+                                                            └────────┬────────┘
+                                                                     │
+        ┌────────────────────────────┬───────────────────────────────┼───────────────────────────────┐
+        ▼                            ▼                               ▼                               ▼
+ [ ToolRegistry (ReAct) ] [ ObservabilityEngine ]           [ Abstract Ports ]               [ RAG Subsystem ]
+  - search_documents (RAG) - Spans (LLM & Tools)             - BaseLLMPlugin                  - Format Parsers
+  - exec (CLI/cURL)        - Token metrics ($)               - BaseMemoryStore                - Page-Aware Chunker
+  - read_skill             - Context overlap                 - BaseEmbeddingProvider          - Hybrid BM25 & Vec
+  - read_file, search      - SQLite WAL                      - BaseRAGStore                   - RRF Fusion Engine
+                                                                     │
+                                                                     ▼
+                                                        ┌─────────────────────────┐
+                                                        │     Driven Adapters     │
+                                                        ├─────────────────────────┤
+                                                        │ - OllamaPlugin (httpx)  │
+                                                        │ - SqliteMemoryStore(DB) │
+                                                        │ - FastEmbedProvider     │
+                                                        │ - SqliteVecStore (DB)   │
+                                                        │ - TelemetryStorage (DB) │
+                                                        └─────────────────────────┘
 ```
 
 ### 1. Доменное ядро и Харнесс (`core/`)
 * **Оркестратор (`core/runner.py`)**: `AgentRunner` координирует ReAct-цикл (по умолчанию до 8 шагов) с автоматическим перехватом вызовов моделей и инструментов.
 * **Защита от зацикливания (Anti-Looping Fallback)**: при достижении лимита шагов агент не обрывает сессию ошибкой, а отправляет системный запрос на принудительный синтез собранных данных в `Final Answer`.
-* **Автоиндексация скиллов**: агент сканирует каталог `skills/` и инжектирует доступные сценарии в системный промпт.
-* **DTO-модели (`core/models.py`)**: `ChatMessage`, `PromptPayload`, `AgentResult`.
-* **Абстрактные порты (`core/ports/`)**: `BaseLLMPlugin`, `BaseMemoryStore`.
+* **Автоиндексация скиллов и RAG**: агент сканирует каталог `skills/` и инжектирует доступные сценарии и строгие правила цитирования документов в системный промпт.
+* **DTO-модели (`core/models.py`)**: `ChatMessage`, `PromptPayload`, `AgentResult`, `DocumentMetadata`, `DocumentChunk`, `SearchResult`.
+* **Абстрактные порты (`core/ports/`)**: `BaseLLMPlugin`, `BaseMemoryStore`, `BaseEmbeddingProvider`, `BaseRAGStore`.
 * **Изоляция ошибок (`core/exceptions.py`)**: `LLMTimeoutError`, `LLMConnectionError`, `LLMResponseError`.
 
 ### 2. Подсистема инструментов (`core/tools/`)
 Набор встроенных инструментов агента:
+* **`search_documents`**: автономный семантический поиск по личным загруженным документам пользователя (PDF, DOCX, TXT, MD) с гибридным ранжированием RRF и цитированием страниц.
 * **`exec`**: универсальное выполнение терминальных/консольных команд (CLI, cURL, bash, git, python) с таймаутом 30с и ограничением вывода до 4 КБ для защиты контекста.
 * **`read_skill`**: динамическое чтение регламентов и пошаговых сценариев из папки `skills/`.
 * **`read_file`**: чтение файлов с защитой от Path Traversal (`_resolve_safe_path`).
@@ -73,6 +76,9 @@
   * `/start` — статус агента и приветствие.
   * `/help` — перечень команд и возможностей.
   * `/new` — сброс контекста и старт чистого диалога.
+  * `/documents` — список проиндексированных документов пользователя с ID, объемом и датой.
+  * `/delete <id>` — удаление документа из базы и векторного индекса.
+  * *Drag-and-drop файлов*: загрузка `.pdf`, `.docx`, `.txt`, `.md` (до 20 МБ) с интерактивным прогресс-баром.
   * `/morning_briefing` — вызов сценария утренней сводки (погода, дата, рекомендации).
   * `/system_health` — вызов сценария диагностики контейнера и инфраструктуры.
   * `/skills` — список зарегистрированных сценариев (скиллов).
@@ -147,7 +153,7 @@ uv pip install -r requirements-dev.txt
 ```bash
 pytest -v
 ```
-Все **154 теста** (память SQLite со скользящим окном, ReAct-харнесс, Observation Compactor, сжатие промптов, утилита exec, загрузка скиллов, анти-зацикливание, спаны обсервабилити, расчет стоимости и хендлеры Telegram) проверяют функциональность и стабильность системы с 100% успехом.
+Все **230+ тестов** (включая автономный RAG-пайплайн, гибридный поиск RRF, память SQLite со скользящим окном, ReAct-харнесс, Observation Compactor, сжатие промптов, утилиту exec, загрузку скиллов, анти-зацикливание, спаны обсервабилити, расчет стоимости и хендлеры Telegram) проверяют функциональность и стабильность системы с 100% успехом.
 
 ---
 
@@ -174,4 +180,93 @@ pytest -v
 | **Выходные токены (Output)** | 5,351 | 3,166 | -40.8% |
 | **Стоимость инференса** | **$0.03344** | **$0.02059** | **-38.4%** |
 | **Успешность выполнения** | **100% (20/20)** | **100% (20/20)** | 0% деградации |
+
+---
+
+## 🧠 Автономный RAG-конвейер (Hybrid Search, Reciprocal Rank Fusion & Anti-Hallucination)
+
+В систему интегрирован локальный автономный RAG-пайплайн для защищенной работы с личными документами пользователей со строгой мультитенантной изоляцией данных.
+
+### 📐 Архитектура RAG-конвейера
+
+```mermaid
+flowchart TD
+    Doc["Документ (.pdf, .docx, .txt, .md)"] --> Parser["Page-Aware Parsers (pypdf, python-docx)"]
+    Parser --> Chunker["RecursiveCharacterChunker (600 симв., overlap 100)"]
+    Chunker --> Embedder["FastEmbed ONNX (multilingual-MiniLM-L12-v2, 384d)"]
+    Embedder --> VecStore[("SQLite: vec_chunks (vec0) + chunks_fts (FTS5)")]
+    
+    UserQuery["Вопрос пользователя в Telegram"] --> AgentRunner["AgentRunner (ReAct Loop)"]
+    AgentRunner --> SearchTool["Tool: search_documents(query)"]
+    SearchTool --> HybridSearch["Hybrid Search (RRF Fusion)"]
+    
+    VecStore -->|"Top-20 Dense"| HybridSearch
+    VecStore -->|"Top-20 Sparse BM25"| HybridSearch
+    
+    HybridSearch -->|"Top-4 Excerpts with [file, p. X]"| AgentRunner
+    AgentRunner --> FinalAnswer["Ответ с цитированием [doc.pdf, p. 2]"]
+```
+
+### 1. Параметры нарезки (Chunking Strategy)
+* **Размер фрагмента (`chunk_size`)**: 600 символов.
+* **Перекрытие (`overlap`)**: 100 символов.
+* **Обоснование параметров**: 
+  * 600 символов оптимально для локальных малых LLM (1.5B–7B): фрагмент содержит законченную семантическую мысль или пункт регламента без размытия контекста посторонним шумом.
+  * 100 символов перекрытия исключают разрыв смыслового контекста на границе чанков и защищают формулировки, списки и даты.
+  * Сохранение 1-based номеров страниц (`page_number`) в каждом чанке для точного цитирования первоисточника.
+
+### 2. Модель эмбеддингов (Local ONNX)
+* **Модель**: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` через библиотеку `fastembed`.
+* **Размерность векторов**: 384 float32.
+* **Преимущества**:
+  * Локальный инференс через ONNX Runtime на CPU без необходимости в GPU.
+  * Мультиязычная поддержка более 50 языков (включая русский и английский).
+  * Быстрый инференс (~10–15 мс на батч).
+  * Автоматическое префиксирование (`passage: ` при индексации, `query: ` при поиске).
+
+### 3. Хранилище и гибридный поиск (Hybrid Search & RRF)
+* **Векторное хранилище**: виртуальная таблица `vec_chunks USING vec0(embedding float[384] distance_metric=cosine)` расширения `sqlite-vec` с автоматическим in-memory fallback на косинусное сходство.
+* **Полнотекстовый индекс**: виртуальная таблица `chunks_fts USING fts5(content)` с токенизацией и префиксным поиском для точных совпадений терминов и морфологии в русском языке.
+* **Алгоритм Reciprocal Rank Fusion (RRF)**:
+  $$RRF(d) = \sum_{m \in \{vec, fts\}} \frac{1}{60 + rank_m(d)}$$
+  Объединяет top-20 векторных кандидатов и top-20 совпадений BM25. Чанки, найденные обоими методами, маркируются источником `"hybrid"` и получают максимальный приоритет.
+
+### 4. Строгая мультитенантная изоляция (Multi-Tenancy)
+* Все операции поиска, чтения и удаления документов строго привязаны к `user_id` Telegram.
+* Поиск изолирован на уровне SQL-запросов: `WHERE documents.user_id = ?`.
+* Удаление через `/delete <id>` использует каскадное удаление (`ON DELETE CASCADE`) из таблиц `documents`, `document_chunks`, `vec_chunks` и `chunks_fts` батчевыми подзапросами без N+1.
+* Документы одного пользователя физически недоступны другим пользователям ни при поиске, ни по прямому ID.
+
+### 5. Интерактивный Telegram UX
+* Пользователь загружает файл (`.pdf`, `.docx`, `.txt`, `.md` до 20 МБ) в чат с ботом.
+* Пошаговая индикация прогресса обработки:
+  1. `⏳ Обработка документа...`
+  2. `📥 Скачивание и чтение...`
+  3. `✂️ Нарезка на фрагменты...`
+  4. `🧠 Векторизация через ONNX...`
+  5. `💾 Сохранение в векторное хранилище...`
+  6. `✅ Документ 'filename' успешно проиндексирован! (Фрагментов: X | Страниц: Y | Размер: Z KB)`
+* Команды управления:
+  * `/documents` — список проиндексированных файлов с ID, датой и объемом.
+  * `/delete <ID или имя файла>` — удаление документа из базы.
+
+### 6. Анти-галлюцинации и цитирование
+* В системный промпт агента динамически инжектируются правила:
+  * Обязательное использование `search_documents` при вопросах о личных документах или регламентах.
+  * Обязательное явное цитирование страницы в формате `[filename, p. X]`.
+  * При отсутствии информации в документах — честный ответ: `"Я не нашёл этой информации в загруженных документах."` с категорическим запретом на додумывание фактов.
+
+### 7. Результаты оценки качества (Golden Dataset Benchmark)
+Тестирование выполнено на эталонном датасете `evaluation/rag_dataset.json` (7 разноплановых вопросов на русском языке по многостраничным PDF, Word и Markdown):
+
+| Метрика | Цель | Результат | Статус |
+| :--- | :---: | :---: | :---: |
+| **HitRate@4** | $\ge 90.0\%$ | **100.0%** (7/7) | **PASS** |
+| **Mean Reciprocal Rank (MRR)** | $\ge 0.80$ | **1.0000** | **PASS** |
+| **Среднее время ответа (Latency)** | $< 100\text{ ms}$ | **18.45 ms** | **PASS** |
+
+### 8. Ограничения и дальнейшее развитие
+* **Сканированные PDF**: извлечение текста опирается на встроенный текстовый слой `pypdf`. Документы-изображения (сканы) требуют подключения внешнего OCR-модуля (Tesseract/PaddleOCR).
+* **Сложные таблицы**: при нарезке широкие таблицы могут разбиваться между чанками; рекомендуется использовать форматирование Markdown или выравнивание пробелами.
+
 

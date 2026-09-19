@@ -143,19 +143,36 @@ class AgentRunner:
             for d in defs
         ]
 
+        has_rag = any(d.get("name") == "search_documents" for d in defs)
+
+        rules = [
+            "1. For skills (e.g. morning-briefing, system-health), step 1 MUST be: Action: read_skill\n"
+            'Action Input: {"skill_name": "<skill_name>"}',
+            "2. EXACTLY ONE action per turn. Format:\n"
+            "Action: <tool_name>\n"
+            "Action Input: <json_arguments>",
+            "3. Wait for 'Observation:' before next action.",
+        ]
+
+        rule_num = 4
+        if has_rag:
+            rules.extend([
+                f"{rule_num}. For questions about user documents, files, policies, or private data, use 'search_documents'.",
+                f"{rule_num + 1}. Always cite source document name and page number, e.g. [filename, p. X].",
+                f"{rule_num + 2}. If search_documents reports no relevant information, state honestly: 'Я не нашёл этой информации в загруженных документах.' NEVER invent or extrapolate unverified facts.",
+            ])
+            rule_num += 3
+
+        rules.extend([
+            f"{rule_num}. When complete, output:\nFinal Answer: <response>",
+            f"{rule_num + 1}. Output STRICTLY in Russian (Cyrillic). Never output Chinese (CJK) characters.",
+        ])
+
         tools_block = (
             "\n\nTools:\n"
             + "\n".join(tool_descriptions)
             + "\n\nRules:\n"
-            "1. For skills (e.g. morning-briefing, system-health), step 1 MUST be: Action: read_skill\n"
-            'Action Input: {"skill_name": "<skill_name>"}\n'
-            "2. EXACTLY ONE action per turn. Format:\n"
-            "Action: <tool_name>\n"
-            "Action Input: <json_arguments>\n"
-            "3. Wait for 'Observation:' before next action.\n"
-            "4. When complete, output:\n"
-            "Final Answer: <response>\n"
-            "5. Output STRICTLY in Russian (Cyrillic). Never output Chinese (CJK) characters."
+            + "\n".join(rules)
         )
         return base + tools_block
 
@@ -309,6 +326,7 @@ class AgentRunner:
                                 task_id=task_id,
                                 turn_number=current_turn,
                                 arguments=tool_args,
+                                session_id=session_id,
                             )
 
                             turn_history.append({
