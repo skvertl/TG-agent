@@ -97,11 +97,15 @@ async def handle_document_upload(
         # Step 5: Completion Summary
         size_kb = (doc.file_size or len(content_bytes)) / 1024.0
         success_text = (
-            f"✅ Документ '**{filename}**' успешно проиндексирован!\n"
+            f"✅ Документ *{filename}* успешно проиндексирован!\n"
             f"📊 Фрагментов: {len(chunks)} | Страниц: {len(pages)} | Размер: {size_kb:.1f} KB\n\n"
             "Теперь вы можете задавать вопросы по документу."
         )
-        await status_msg.edit_text(success_text)
+        try:
+            await status_msg.edit_text(success_text)
+        except Exception:
+            await message.answer(success_text)
+
         logger.info(
             "Document '%s' (user: %s, chunks: %d) successfully indexed.",
             filename,
@@ -111,7 +115,11 @@ async def handle_document_upload(
 
     except Exception as exc:
         logger.exception("Error processing document '%s': %s", filename, exc)
-        await status_msg.edit_text(f"❌ Ошибка при обработке документа: {str(exc)}")
+        err_text = f"❌ Ошибка при обработке документа: {str(exc)}"
+        try:
+            await status_msg.edit_text(err_text)
+        except Exception:
+            await message.answer(err_text)
 
 
 def create_document_router(
