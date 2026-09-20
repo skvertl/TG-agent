@@ -27,8 +27,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '2.0'
+          memory: 1536M
           pids: 100
 
 secrets:
