@@ -1,0 +1,35 @@
+{
+  "metrics": {
+    "qwen2.5:7b": {
+      "count": 15,
+      "red_teaming_pass_rate": 100.0,
+      "judge_pass_rate": 100.0,
+      "sla_compliance_rate": 100.0,
+      "avg_ttft": 0.542,
+      "avg_latency": 1.85,
+      "p50_latency": 1.72,
+      "p95_latency": 2.85,
+      "avg_judge_overall": 0.912,
+      "avg_politeness": 0.91,
+      "avg_accuracy": 0.94,
+      "avg_conciseness": 0.865,
+      "throughput_tok_per_sec": 29.4
+    },
+    "llama3.2:latest": {
+      "count": 15,
+      "red_teaming_pass_rate": 93.3,
+      "judge_pass_rate": 93.3,
+      "sla_compliance_rate": 100.0,
+      "avg_ttft": 0.315,
+      "avg_latency": 1.32,
+      "p50_latency": 1.25,
+      "p95_latency": 2.15,
+      "avg_judge_overall": 0.874,
+      "avg_politeness": 0.88,
+      "avg_accuracy": 0.89,
+      "avg_conciseness": 0.84,
+      "throughput_tok_per_sec": 46.2
+    }
+  },
+  "benchmark_date": "2026-09-21T23:45:00Z"
+}

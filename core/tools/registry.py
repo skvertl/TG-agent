@@ -42,7 +42,8 @@ class ToolRegistry:
     ) -> str:
         tool = self._tools.get(tool_name)
         if not tool:
-            return f"Error: Tool '{tool_name}' not found."
+            available = ", ".join(sorted(self._tools.keys())) if self._tools else "none"
+            return f"Error: Tool '{tool_name}' not found. Available tools: {available}."
 
         # Автоматический перехват и сбор метрик через ObservabilityEngine
         with self.engine.track_tool(
@@ -51,8 +52,32 @@ class ToolRegistry:
             turn_number=turn_number,
             input_data=arguments,
         ) as span:
+            call_args = dict(arguments) if isinstance(arguments, dict) else {}
+            if isinstance(tool.parameters, dict):
+                required_params = tool.parameters.get("required", [])
+                if isinstance(required_params, list):
+                    if len(required_params) == 1 and (
+                        required_params[0] not in call_args or call_args[required_params[0]] is None
+                    ):
+                        single_param = required_params[0]
+                        if "input" in call_args and call_args["input"] is not None:
+                            call_args[single_param] = call_args["input"]
+                        elif single_param == "skill_name":
+                            for alt in ("name", "path"):
+                                if alt in call_args and call_args[alt] is not None:
+                                    call_args[single_param] = call_args[alt]
+                                    break
+                        elif single_param == "command":
+                            if "cmd" in call_args and call_args["cmd"] is not None:
+                                call_args[single_param] = call_args["cmd"]
+
+                    for param in required_params:
+                        if param not in call_args or call_args[param] is None:
+                            output = f"Error: Missing required argument '{param}' for tool '{tool_name}'. Parameters schema: {tool.parameters}"
+                            span.set_output(output)
+                            return output
+
             try:
-                call_args = dict(arguments)
                 target_func = getattr(tool, "func", tool.execute)
                 import inspect
                 sig = inspect.signature(target_func)

@@ -1,4 +1,5 @@
 """Domain orchestrator service."""
+import ast
 import json
 import re
 import uuid
@@ -12,6 +13,27 @@ from core.tools.registry import ToolRegistry
 
 
 from pathlib import Path
+
+
+def sanitize_input(user_prompt: str, max_chars: int = 4096) -> str:
+    """
+    Sanitizes raw user input before processing:
+    1. Strips null bytes ('\\x00') and non-printable control characters (preserving \\n, \\r, \\t).
+    2. Trims leading and trailing whitespace.
+    3. Enforces maximum character length (max_chars=4096), appending a warning notice if truncated.
+    """
+    if not user_prompt:
+        return ""
+
+    # Strip null bytes and non-printable control characters (preserving \\t, \\n, \\r)
+    cleaned = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", user_prompt)
+    cleaned = cleaned.strip()
+
+    if len(cleaned) > max_chars:
+        warning = f"\n\n[Предупреждение: сообщение превысило {max_chars} символов и было автоматически сокращено]"
+        cleaned = cleaned[:max_chars] + warning
+
+    return cleaned
 
 
 def sanitize_output(text: str) -> str:
@@ -186,14 +208,71 @@ class AgentRunner:
             input_match = re.search(r"Action Input:\s*", after_action)
             if input_match:
                 payload_str = after_action[input_match.end():].strip()
-                if payload_str.startswith("{"):
+                # Strip markdown code fences if wrapped in ```json ... ``` or ``` ... ```
+                if payload_str.startswith("```"):
+                    lines = payload_str.splitlines()
+                    if lines and lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].strip().startswith("```"):
+                        lines = lines[:-1]
+                    payload_str = "\n".join(lines).strip()
+
+                is_json_candidate = payload_str.startswith("{") or "{" in payload_str
+
+                if is_json_candidate:
+                    last_err = None
+
+                    # 1. Standard raw_decode or json.loads
                     try:
                         decoder = json.JSONDecoder()
                         args, _ = decoder.raw_decode(payload_str)
                         if isinstance(args, dict):
                             return tool_name, args
-                    except json.JSONDecodeError:
+                    except json.JSONDecodeError as jde:
+                        last_err = jde
+
+                    # 2. Extract JSON candidate substring between outermost braces
+                    first_brace = payload_str.find("{")
+                    last_brace = payload_str.rfind("}")
+                    candidate = (
+                        payload_str[first_brace : last_brace + 1]
+                        if (first_brace != -1 and last_brace > first_brace)
+                        else payload_str
+                    )
+
+                    # 3. Try ast.literal_eval for python-dict-like syntax (single quotes, trailing commas)
+                    try:
+                        py_cand = re.sub(r":\s*true\b", ": True", candidate)
+                        py_cand = re.sub(r":\s*false\b", ": False", py_cand)
+                        py_cand = re.sub(r":\s*null\b", ": None", py_cand)
+                        val = ast.literal_eval(py_cand)
+                        if isinstance(val, dict):
+                            return tool_name, val
+                    except Exception:
                         pass
+
+                    # 4. Regex-based repairs:
+                    # - Strip trailing commas before } or ]
+                    repaired = re.sub(r",\s*([}\]])", r"\1", candidate)
+                    # - Quote single-quoted keys: 'key': -> "key":
+                    repaired = re.sub(r"([{,]\s*)'([^'\n\r]+)'\s*:", r'\1"\2":', repaired)
+                    # - Quote unquoted keys: key: -> "key":
+                    repaired = re.sub(r"([{,]\s*)([a-zA-Z_][a-zA-Z0-9_\-]*)\s*:", r'\1"\2":', repaired)
+                    # - Convert single-quoted string values: : 'val' -> : "val"
+                    repaired = re.sub(r":\s*'([^'\n\r]*)'", r': "\1"', repaired)
+                    # - Strip trailing commas again
+                    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+
+                    try:
+                        val = json.loads(repaired)
+                        if isinstance(val, dict):
+                            return tool_name, val
+                    except json.JSONDecodeError as err:
+                        last_err = err
+
+                    err_msg = f"Malformed JSON: {last_err}" if last_err else "Malformed JSON"
+                    return tool_name, {"__error__": err_msg}
+
                 first_line = payload_str.split("\n", 1)[0].strip()
                 try:
                     args = json.loads(first_line)
@@ -269,10 +348,20 @@ class AgentRunner:
         """
         task_id = task_id or f"task-{uuid.uuid4().hex[:8]}"
 
+        sanitized_prompt = sanitize_input(user_prompt)
+        if not sanitized_prompt:
+            return AgentResult(
+                content="Пожалуйста, отправьте текстовый вопрос или команду.",
+                model="input_guard",
+                prompt_tokens=0,
+                completion_tokens=0,
+                task_id=task_id,
+            )
+
         history = await self.memory_store.get_history(session_id, limit=self.history_limit)
         effective_system_prompt = self._build_system_prompt_with_tools()
 
-        user_message = ChatMessage(role="user", content=user_prompt)
+        user_message = ChatMessage(role="user", content=sanitized_prompt)
 
         turn_history: list[dict[str, Any]] = []
         last_result: Optional[AgentResult] = None
@@ -283,7 +372,7 @@ class AgentRunner:
             while current_turn <= self.max_turns:
                 messages = self._prepare_turn_messages(
                     system_prompt=effective_system_prompt,
-                    user_prompt=user_prompt,
+                    user_prompt=sanitized_prompt,
                     turn_history=turn_history,
                     history=history,
                 )
@@ -321,13 +410,19 @@ class AgentRunner:
                     if action:
                         if current_turn < self.max_turns:
                             tool_name, tool_args = action
-                            tool_output = self.tool_registry.execute(
-                                tool_name=tool_name,
-                                task_id=task_id,
-                                turn_number=current_turn,
-                                arguments=tool_args,
-                                session_id=session_id,
-                            )
+                            if isinstance(tool_args, dict) and "__error__" in tool_args:
+                                tool_output = (
+                                    'Error: Invalid JSON in Action Input. '
+                                    'Please format arguments as valid JSON: {"key": "value"}'
+                                )
+                            else:
+                                tool_output = self.tool_registry.execute(
+                                    tool_name=tool_name,
+                                    task_id=task_id,
+                                    turn_number=current_turn,
+                                    arguments=tool_args,
+                                    session_id=session_id,
+                                )
 
                             turn_history.append({
                                 "action": response_text,
@@ -339,7 +434,7 @@ class AgentRunner:
                             # Защита от зацикливания (Anti-Looping): принудительный синтез ответа
                             synthesis_messages = self._prepare_turn_messages(
                                 system_prompt=effective_system_prompt,
-                                user_prompt=user_prompt,
+                                user_prompt=sanitized_prompt,
                                 turn_history=turn_history,
                                 history=history,
                             )
