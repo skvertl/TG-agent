@@ -146,7 +146,7 @@ Encapsulates extraction of text and pagination across file formats:
 1. **Format Parsers**:
    - `parse_txt(content: bytes) -> List[Tuple[int, str]]`: Decodes UTF-8/CP1251 text; returns `[(1, text)]`.
    - `parse_md(content: bytes) -> List[Tuple[int, str]]`: Cleans Markdown syntax; returns `[(1, text)]`.
-   - `parse_docx(content: bytes) -> List[Tuple[int, str]]`: Reads paragraphs via `python-docx`; splits on explicit page breaks or returns `[(1, text)]`.
+   - `parse_docx(content: bytes) -> List[Tuple[int, str]]`: Parses OOXML structure (`word/document.xml` and `docProps/app.xml`) sequentially: detects explicit page breaks (`<w:br w:type="page"/>`), Word-rendered soft breaks (`<w:lastRenderedPageBreak/>`), extracts tabular data (`<w:tbl>`), reads document metadata pages (`<Pages>`), and distributes text proportionally across pages for multi-page documents (80+ pages) when soft breaks are omitted; fallback to `python-docx`.
    - `parse_pdf(content: bytes) -> List[Tuple[int, str]]`: Iterates pages using `pypdf.PdfReader`; returns `[(page_num, page_text), ...]`.
 
 2. **Recursive Character Chunker**:
@@ -154,8 +154,8 @@ Encapsulates extraction of text and pagination across file formats:
    class RecursiveCharacterChunker:
        def __init__(
            self,
-           chunk_size: int = 500,
-           chunk_overlap: int = 80,
+           chunk_size: int = 600,
+           chunk_overlap: int = 100,
            separators: Optional[List[str]] = None,
        ):
            self.chunk_size = chunk_size
@@ -173,7 +173,7 @@ Encapsulates extraction of text and pagination across file formats:
 
 ### 3.2. Local Embedding Provider (`adapters/embedding/fastembed_provider.py`)
 Implements `BaseEmbeddingProvider` using `fastembed.TextEmbedding`:
-- Model: `intfloat/multilingual-e5-small`.
+- Model: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (FastEmbed ONNX registry, 384 dimensions).
 - Vector dimension: 384.
 - Prefix handling:
   - Document chunks: Prepend `"passage: "`
