@@ -1,5 +1,7 @@
 """Document parsers and page-aware recursive character chunker."""
 import io
+import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -8,6 +10,127 @@ from core.observability.overlap import estimate_tokens
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx", ".pdf"}
+
+
+def _extract_docx_with_pages(content: bytes) -> List[Tuple[int, str]]:
+    """
+    Extracts text and page boundaries from DOCX content.
+    1. If valid zip archive, inspects docProps/app.xml for metadata page count (<Pages>).
+    2. Parses word/document.xml sequentially looking for:
+       - Hard page breaks: <w:br w:type="page"/>
+       - Word-rendered soft page breaks: <w:lastRenderedPageBreak/>
+       - Paragraphs: <w:p>
+       - Tables: <w:tbl>, rows <w:tr>, cells <w:tc>
+       - Text: <w:t> and tabs <w:tab/>
+    3. If XML page breaks yield >= 2 pages, uses the break-derived pages.
+    4. If XML page breaks yield only 1 page, but metadata reports multiple pages (e.g. 86 pages),
+       distributes paragraphs proportionally across the metadata pages.
+    5. Fallback: if not a zip (e.g. mock in tests) or on parse error, uses python-docx.
+    """
+    if not zipfile.is_zipfile(io.BytesIO(content)):
+        try:
+            import docx
+            doc = docx.Document(io.BytesIO(content))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text)
+            return [(1, text)]
+        except Exception:
+            return [(1, "")]
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as z:
+            expected_pages = 1
+            if "docProps/app.xml" in z.namelist():
+                try:
+                    app_xml = z.read("docProps/app.xml")
+                    root_app = ET.fromstring(app_xml)
+                    for elem in root_app.iter():
+                        if elem.tag.endswith("Pages") and elem.text and elem.text.strip().isdigit():
+                            expected_pages = max(1, int(elem.text.strip()))
+                except Exception:
+                    pass
+
+            if "word/document.xml" not in z.namelist():
+                return [(1, "")]
+
+            doc_xml = z.read("word/document.xml")
+            root = ET.fromstring(doc_xml)
+            W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+
+            pages: List[str] = []
+            current_tokens: List[str] = []
+
+            def flush_page():
+                t = "".join(current_tokens).strip()
+                if t:
+                    pages.append(t)
+                elif pages:
+                    pages.append("")
+                current_tokens.clear()
+
+            body = root.find(f"{{{W_NS}}}body")
+            if body is None:
+                body = root
+
+            for elem in body.iter():
+                tag = elem.tag
+                if tag == f"{{{W_NS}}}lastRenderedPageBreak" or (
+                    tag == f"{{{W_NS}}}br" and elem.attrib.get(f"{{{W_NS}}}type") == "page"
+                ):
+                    flush_page()
+                elif tag == f"{{{W_NS}}}t" and elem.text:
+                    current_tokens.append(elem.text)
+                elif tag == f"{{{W_NS}}}tab":
+                    current_tokens.append("\t")
+                elif tag == f"{{{W_NS}}}p" or tag == f"{{{W_NS}}}tr":
+                    if current_tokens and not current_tokens[-1].endswith("\n"):
+                        current_tokens.append("\n")
+
+            flush_page()
+
+            clean_pages = [(idx + 1, p) for idx, p in enumerate(pages) if p.strip()]
+            if len(clean_pages) > 1:
+                return clean_pages
+
+            full_text = clean_pages[0][1] if clean_pages else ""
+            if not full_text:
+                return [(1, "")]
+
+            if expected_pages > 1 and len(full_text) > expected_pages * 20:
+                paragraphs = [p for p in full_text.split("\n") if p.strip()]
+                total_chars = sum(len(p) for p in paragraphs)
+                chars_per_page = max(1, total_chars // expected_pages)
+
+                distributed_pages: List[Tuple[int, str]] = []
+                curr_p_page: List[str] = []
+                curr_len = 0
+                current_page_num = 1
+
+                for p in paragraphs:
+                    curr_p_page.append(p)
+                    curr_len += len(p)
+                    if curr_len >= chars_per_page and current_page_num < expected_pages:
+                        distributed_pages.append((current_page_num, "\n".join(curr_p_page)))
+                        curr_p_page = []
+                        curr_len = 0
+                        current_page_num += 1
+
+                if curr_p_page:
+                    if distributed_pages and current_page_num <= expected_pages:
+                        distributed_pages.append((current_page_num, "\n".join(curr_p_page)))
+                    elif distributed_pages:
+                        last_num, last_text = distributed_pages[-1]
+                        distributed_pages[-1] = (last_num, last_text + "\n" + "\n".join(curr_p_page))
+                    else:
+                        distributed_pages.append((1, "\n".join(curr_p_page)))
+
+                return distributed_pages
+
+            return [(1, full_text)]
+    except Exception:
+        import docx
+        doc = docx.Document(io.BytesIO(content))
+        text = "\n".join(p.text for p in doc.paragraphs if p.text)
+        return [(1, text)]
 
 
 def extract_text_with_pages(content: bytes, filename: str) -> List[Tuple[int, str]]:
@@ -33,13 +156,7 @@ def extract_text_with_pages(content: bytes, filename: str) -> List[Tuple[int, st
         return [(1, text)]
 
     elif ext == ".docx":
-        try:
-            import docx
-        except ImportError:
-            raise ImportError("python-docx is required to parse DOCX documents. Please install python-docx.")
-        doc = docx.Document(io.BytesIO(content))
-        text = "\n".join(p.text for p in doc.paragraphs if p.text)
-        return [(1, text)]
+        return _extract_docx_with_pages(content)
 
     elif ext == ".pdf":
         try:

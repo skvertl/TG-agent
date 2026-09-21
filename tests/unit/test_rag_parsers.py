@@ -41,6 +41,23 @@ class TestExtractTextWithPages:
             assert len(pages) == 1
             assert pages[0] == (1, "First paragraph\nSecond paragraph")
 
+    def test_extract_docx_real_with_page_breaks(self):
+        import io
+        import docx
+        doc = docx.Document()
+        doc.add_paragraph("First Page Content")
+        doc.add_page_break()
+        doc.add_paragraph("Second Page Content")
+        buf = io.BytesIO()
+        doc.save(buf)
+
+        pages = extract_text_with_pages(buf.getvalue(), "thesis.docx")
+        assert len(pages) == 2
+        assert pages[0][0] == 1
+        assert "First Page Content" in pages[0][1]
+        assert pages[1][0] == 2
+        assert "Second Page Content" in pages[1][1]
+
     def test_extract_pdf(self):
         with patch("pypdf.PdfReader") as mock_reader_cls:
             page1 = MagicMock()
