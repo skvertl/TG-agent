@@ -110,3 +110,30 @@ class TestDocumentCommands:
         text = mock_message.answer.call_args[0][0]
         assert "не найден" in text
         assert "nonexistent.docx" in text
+
+    @pytest.mark.asyncio
+    async def test_documents_with_special_characters_fallback(self, mock_message, mock_rag_store):
+        doc = DocumentMetadata(
+            id="abc12345",
+            user_id="555",
+            filename="konspekt_3_uroka_nemeckogo_jazyka-poliglotsd_pet.pdf",
+            file_type="pdf",
+            file_size_bytes=50000,
+            page_count=7,
+            chunk_count=16,
+            created_at=datetime(2026, 9, 21, 18, 37, 0, tzinfo=timezone.utc),
+        )
+        mock_rag_store.list_documents.return_value = [doc]
+
+        call_count = 0
+        async def mock_answer(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if kwargs.get("parse_mode") == "Markdown":
+                raise Exception("TelegramBadRequest")
+            return MagicMock()
+
+        mock_message.answer.side_effect = mock_answer
+
+        await documents_list_handler(mock_message, rag_store=mock_rag_store)
+        assert call_count == 2

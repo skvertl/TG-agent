@@ -85,6 +85,7 @@ async def documents_list_handler(
         return
 
     lines = ["📚 **Ваши документы:**\n"]
+    fallback_lines = ["📚 Ваши документы:\n"]
     for i, d in enumerate(docs, start=1):
         size_str = (
             f"{d.file_size_bytes / (1024 * 1024):.1f} MB"
@@ -98,14 +99,27 @@ async def documents_list_handler(
         )
         doc_id_short = d.id[:8]
         lines.append(
-            f"{i}. 📄 **{d.filename}**\n"
+            f"{i}. 📄 `{d.filename}`\n"
             f"   • ID: `{doc_id_short}`\n"
             f"   • Страниц: {d.page_count} | Чанков: {d.chunk_count} | {size_str}\n"
             f"   • Дата: {date_str}"
         )
+        fallback_lines.append(
+            f"{i}. 📄 {d.filename}\n"
+            f"   • ID: {doc_id_short}\n"
+            f"   • Страниц: {d.page_count} | Чанков: {d.chunk_count} | {size_str}\n"
+            f"   • Дата: {date_str}"
+        )
 
-    lines.append("\nДля удаления документа отправьте: /delete <ID или имя файла>")
-    await message.answer("\n".join(lines), parse_mode="Markdown")
+    footer = "\nДля удаления документа отправьте: /delete <ID или имя файла>"
+    lines.append(footer)
+    fallback_lines.append(footer)
+
+    try:
+        await message.answer("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        logger.warning("Markdown parsing error in /documents list: %s. Sending plain text fallback.", e)
+        await message.answer("\n".join(fallback_lines), parse_mode=None)
 
 
 @router.message(Command("delete", "del", "remove"))
@@ -126,12 +140,12 @@ async def document_delete_handler(
     if not doc_ref:
         await message.answer(
             "ℹ️ Использование: /delete <ID документа или имя файла>",
-            parse_mode="Markdown",
+            parse_mode=None,
         )
         return
 
     if not rag_store:
-        await message.answer("⚙️ RAG-хранилище документов не подключено.", parse_mode="Markdown")
+        await message.answer("⚙️ RAG-хранилище документов не подключено.", parse_mode=None)
         return
 
     user_id = str(message.from_user.id if message.from_user else message.chat.id)
@@ -140,12 +154,12 @@ async def document_delete_handler(
     if success:
         await message.answer(
             f"🗑 Документ '{doc_ref}' успешно удален из базы и векторного индекса.",
-            parse_mode="Markdown",
+            parse_mode=None,
         )
     else:
         await message.answer(
             f"❌ Документ '{doc_ref}' не найден в вашем списке документов.",
-            parse_mode="Markdown",
+            parse_mode=None,
         )
 
 
